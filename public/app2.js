@@ -287,6 +287,8 @@ function showTierLocked() {
     m.innerHTML = `<div class="tier-lock-box"><p>Kamu tidak Bisa Memilih Menu ini Segera Upgrade Paket kamu</p><button class="btn btn-plum" onclick="closeTierLocked()">OK</button></div>`;
     m.addEventListener("click", (e) => { if (e.target === m) closeTierLocked(); });
     document.body.appendChild(m);
+  } else {
+    m.querySelector("p").textContent = "Kamu tidak Bisa Memilih Menu ini Segera Upgrade Paket kamu";
   }
   m.style.display = "flex";
   const pop = $("#harvestProviderSidebar"); if (pop) pop.style.display = "none";
@@ -313,9 +315,11 @@ function renderHarvestSidebar() {
   TIERS.forEach((t) => (t.providers || []).forEach((p) => items.push({ tier: t, p })));
   if (!items.length) { el.innerHTML = `<p class="muted">Belum ada provider.</p>`; return; }
   const myRank = TIER_RANK[(ME && ME.tier_slug) || "gratis"] ?? 0;
+  // Tangga panen (aturan Hestia 2026-10-26): gratis: semua · plus: paket Plus ke atas · pro: hanya Premium · premium: Segera Hadir.
+  const canHarvest = (slug) => slug === "gratis" ? true : slug === "plus" ? myRank >= 1 : slug === "pro" ? myRank >= 3 : false;
   const selItem = items.find((x) => x.p.id === selectedHarvestProviderId);
-  if (!selectedHarvestProviderId || !selItem || (TIER_RANK[selItem.tier.slug] ?? 0) > myRank || selItem.tier.slug === "pro") selectedHarvestProviderId = (items.find((x) => (TIER_RANK[x.tier.slug] ?? 0) <= myRank && x.tier.slug !== "pro") || items.find((x) => x.tier.slug !== "pro") || items[0]).p.id;
-  el.innerHTML = items.map((x) => { const locked = (TIER_RANK[x.tier.slug] ?? 0) > myRank || x.tier.slug === "pro"; const comingSoon = x.tier.slug === "plus" || x.tier.slug === "premium"; const isLocked = locked || comingSoon; const clickFn = x.tier.slug === "pro" ? "showTierLocked()" : (comingSoon ? "showComingSoon()" : `selectHarvestProvider(${x.p.id})`); return `<div class="tier-side-opt${x.p.id === selectedHarvestProviderId ? " sel" : ""}${isLocked ? " locked" : ""}" data-pid="${x.p.id}" onclick="${clickFn}">${isLocked ? "🔒 " : ""}${esc(short[x.tier.slug] || x.tier.name)} • ${x.p.modelCount} Model</div>`; }).join("");
+  if (!selectedHarvestProviderId || !selItem || !canHarvest(selItem.tier.slug)) selectedHarvestProviderId = (items.find((x) => canHarvest(x.tier.slug)) || items[0]).p.id;
+  el.innerHTML = items.map((x) => { const ok = canHarvest(x.tier.slug); const comingSoon = x.tier.slug === "premium"; const isLocked = !ok; const clickFn = ok ? `selectHarvestProvider(${x.p.id})` : (comingSoon ? "showComingSoon()" : "showTierLocked()"); return `<div class="tier-side-opt${x.p.id === selectedHarvestProviderId ? " sel" : ""}${isLocked ? " locked" : ""}" data-pid="${x.p.id}" onclick="${clickFn}">${isLocked ? "🔒 " : ""}${esc(short[x.tier.slug] || x.tier.name)} • ${x.p.modelCount} Model</div>`; }).join("");
   const cur = items.find((x) => x.p.id === selectedHarvestProviderId);
   const lbl = $("#tierPickerLabel"); if (lbl && cur) lbl.textContent = `${short[cur.tier.slug] || cur.tier.name} • ${cur.p.modelCount} Model`;
   updateHarvestLimitUI();
