@@ -89,24 +89,22 @@ let BANSOS = { keys: [], limit: 2, locked: false, pool: null, models: [], notes:
 let bansosTimer = null;
 function fmtID(n) { return Number(n || 0).toLocaleString("id-ID"); }
 function bansosSection() {
-  return `<div class="section" id="bansosSection"><div class="card tier bansos-card">
+  return `<div class="section" id="bansosSection"><div class="card tier bansos-card" style="position:relative">
     <div class="tier-head"><span class="badge bansos">\uD83C\uDF81 BANSOS</span><div class="tier-price"><div class="price">GRATIS</div><div class="price-dur">Untuk Semua Pengguna</div></div></div>
     <div class="brand"><img class="bansos-logo" src="/logos/bansos.jpg" alt="Bansos" />
     <div><h3>Bansos Token 4.5 Juta</h3><p>Token AI gratis untuk semua pengguna, tanpa login. Buat API key kamu sendiri (maksimal 2 key) dan pakai di Base URL HestiaFlow. Kuota 4.5 juta token per hari dipakai bersama \u2014 habis hari ini, besok ngisi lagi.</p></div></div>
     <div><span class="chip" id="bansosModelCount">Model pilihan</span><span class="chip">Tanpa login</span><span class="chip">Maks 2 API key</span></div>
     <div id="bansosModels" style="margin-top:10px"></div>
-    <div class="bansos-pool">
-      <div class="bansos-pool-top"><span>Sisa token bansos hari ini</span><span class="bansos-pool-num" id="bansosRemain">Memuat\u2026</span></div>
-      <div class="bansos-bar"><div class="bansos-bar-fill" id="bansosBarFill"></div></div>
-      <div class="bansos-pool-sub" id="bansosPoolSub">dari total 5.000.000 token per hari</div>
-    </div>
     <div class="bansos-baseurl"><b>${esc(SETTINGS.baseUrl || "")}</b></div>
     <div id="bansosKeys"></div>
     <div class="bansos-actions"><button class="btn btn-gold" id="bansosCreateBtn" onclick="createBansosKey()">Buat API Key</button></div>
     <p class="muted" id="bansosMsg"></p>
+    <div id="bansosLockOverlay" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;background:rgba(245,240,235,.45);backdrop-filter:blur(1.5px);-webkit-backdrop-filter:blur(1.5px);border-radius:18px;z-index:5;pointer-events:none"><span style="font-size:120px;line-height:1;filter:drop-shadow(0 10px 24px rgba(61,27,61,.35))">\uD83D\uDD12</span></div>
   </div></div>`;
 }
 function renderBansos() {
+  const ov = $("#bansosLockOverlay");
+  if (ov) ov.style.display = (BANSOS.pool && BANSOS.pool.locked) ? "flex" : "none";
   const rem = $("#bansosRemain"), fill = $("#bansosBarFill"), sub = $("#bansosPoolSub");
   if (BANSOS.pool && rem && fill && sub) {
     const total = BANSOS.pool.total || 5000000, sisa = BANSOS.pool.remaining || 0;
