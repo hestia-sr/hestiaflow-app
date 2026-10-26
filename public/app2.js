@@ -124,7 +124,8 @@ function renderBansos() {
   }
   const btn = $("#bansosCreateBtn");
   if (btn) {
-    if (BANSOS.locked) { btn.disabled = true; btn.textContent = "\uD83D\uDD12 Sudah 2 API Key"; }
+    if (BANSOS.pool && BANSOS.pool.locked) { btn.disabled = true; btn.textContent = "\uD83D\uDD12 Bansos Dikunci Sementara"; }
+    else if (BANSOS.locked) { btn.disabled = true; btn.textContent = "\uD83D\uDD12 Sudah 2 API Key"; }
     else { btn.disabled = false; btn.textContent = "Buat API Key"; }
   }
   const mBox = $("#bansosModels"), mCount = $("#bansosModelCount");
