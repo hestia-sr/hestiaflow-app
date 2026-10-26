@@ -253,6 +253,16 @@ async function deleteMyKey(id, btn) {
   try { await api(`/api/my-keys/${id}`, { method: "DELETE" }); loadUser(); }
   catch (e) { alert("Gagal hapus: " + e.message); btn.disabled = false; btn.textContent = "Hapus"; btn.dataset.armed = ""; }
 }
+async function deleteAdminKey(id, btn) {
+  if (!btn.dataset.armed) {
+    btn.dataset.armed = "1"; btn.textContent = "Yakin Hapus?";
+    setTimeout(() => { if (btn.dataset) { btn.dataset.armed = ""; btn.textContent = "Hapus Key"; } }, 3000);
+    return;
+  }
+  btn.disabled = true; btn.textContent = "Menghapus...";
+  try { await api(`/api/admin/keys/${id}`, { method: "DELETE" }); loadAdmin(); }
+  catch (e) { alert("Gagal hapus key: " + e.message); btn.disabled = false; btn.textContent = "Hapus Key"; btn.dataset.armed = ""; }
+}
 function clampCount(el) { let v = parseInt(el.value, 10); if (isNaN(v)) v = 1; el.value = Math.max(1, Math.min(50, v)); }
 const TIER_HARVEST_LIMIT = { gratis: 100, plus: 500, pro: 1500, premium: 5000 };
 function userHarvestLimit() { const pid = Number(selectedHarvestProviderId); const item = TIERS.flatMap((t) => (t.providers || []).map((p) => ({ tier: t, p }))).find((x) => x.p.id === pid); return item ? (TIER_HARVEST_LIMIT[item.tier.slug] || 50) : 50; }
@@ -408,7 +418,8 @@ function renderAdminSections() {
       ${keyFilterUser ? `<div class="banner-filter">Filter: kunci milik <b>${esc(keyFilterUser)}</b> <button class="btn btn-ghost btn-sm" onclick="clearKeyFilter()">Tampilkan semua</button></div>` : ""}
       <div class="grid">${keys.map((k) => `<div class="card"><span class="chip">${esc(k.providerBrand || "")}</span><span class="chip">${esc(k.tierSlug || "")}</span>
         <p class="kv">Pemilik: <b>${esc(k.ownerEmail || "(pool)")}</b> · Prefix: ${esc(k.keyPrefix)} · Credit: ${k.credit != null ? esc(k.credit) : "Tidak dinyatakan"}</p>
-        <div>${(k.models || []).slice(0, 8).map((m) => `<span class="chip model">${esc(m)}</span>`).join("")}${(k.models || []).length > 8 ? `<span class="chip">+${k.models.length - 8} lagi</span>` : ""}</div></div>`).join("") || `<p class="muted">Belum ada kunci.</p>`}</div></div>`;
+        <div>${(k.models || []).slice(0, 8).map((m) => `<span class="chip model">${esc(m)}</span>`).join("")}${(k.models || []).length > 8 ? `<span class="chip">+${k.models.length - 8} lagi</span>` : ""}</div>
+        <div style="margin-top:8px"><button class="btn btn-danger btn-sm" onclick="deleteAdminKey(${k.id},this)">Hapus Key</button></div></div>`).join("") || `<p class="muted">Belum ada kunci.</p>`}</div></div>`;
   }
   if (adminSection === "provider") {
     html = `<div id="sec-provider"><h3>Provider & Tier</h3>
@@ -477,13 +488,8 @@ function viewUserKeys(id) {
 function clearKeyFilter() { keyFilterUser = null; renderAdminSections(); }
 async function setUserTier(id, slug) { try { await api(`/api/admin/users/${id}/tier`, { method: "POST", body: JSON.stringify({ tierSlug: slug }) }); } catch (e) { alert("Gagal set paket: " + e.message); } }
 function askDeleteUser(id, email) {
-  if (deletePending === id) {
-    deletePending = null;
-    api(`/api/admin/users/${id}`, { method: "DELETE" }).then(() => loadAdmin()).catch((e) => alert("Gagal: " + e.message));
-  } else {
-    deletePending = id;
-    if (!confirm(`Hapus akun ${email}? Klik Hapus Akun sekali lagi untuk konfirmasi.`)) deletePending = null;
-  }
+  if (!confirm(`Hapus akun ${email}? Semua kunci milik pengguna ini ikut terhapus dan tidak bisa dibatalkan.`)) return;
+  api(`/api/admin/users/${id}`, { method: "DELETE" }).then(() => loadAdmin()).catch((e) => alert("Gagal: " + e.message));
 }
 async function addTier() {
   const name = $("#newTierName").value.trim(); if (!name) return alert("Nama tier wajib diisi");
