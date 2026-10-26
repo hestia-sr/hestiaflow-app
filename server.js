@@ -65,8 +65,8 @@ function seed() {
   // Provider Bansos (tanpa tier): 4 model pilihan. Key upstream (pool akun) disimpan di tabel workers,
   // di-seed dari env BANSOS_UPSTREAM_KEYS. upstream_url server-side saja (tidak pernah tampil publik).
   // Nama publik = nama asli model (tanpa prefix agregator). upstream_url via env PROVIDER_BANSOS_UPSTREAM_URL.
-  const BANSOS_MODELS = ["codestral-latest","qwen3.6-27b","gpt-oss-20b","mistral-large-latest","gpt-oss-120b","gemini-2.5-flash"];
-  const BANSOS_NOTES = {"codestral-latest":"Jago coding.","qwen3.6-27b":"Jago coding.","gpt-oss-20b":"Paling cepat.","mistral-large-latest":"Paling jago untuk semua.","gpt-oss-120b":"Paling jago reasoning.","gemini-2.5-flash":"Cepat, bisa lihat gambar."};
+  const BANSOS_MODELS = ["codestral-latest","qwen3.6-27b","gpt-oss-20b","mistral-large-latest","gpt-oss-120b"];
+  const BANSOS_NOTES = {"codestral-latest":"Jago coding.","qwen3.6-27b":"Jago coding.","gpt-oss-20b":"Paling cepat.","mistral-large-latest":"Paling jago untuk semua.","gpt-oss-120b":"Paling jago reasoning."};
   db.prepare("INSERT INTO providers (tier_id,brand_name,tagline,model_count,model_list_json,model_notes_json,credit_note,default_credit,sort_order,upstream_url) SELECT NULL,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM providers WHERE brand_name='Bansos')").run(
     "Bansos", "Token gratis untuk semua pengguna.", BANSOS_MODELS.length, JSON.stringify(BANSOS_MODELS), JSON.stringify(BANSOS_NOTES), "4.5 juta token per hari untuk semua pengguna.", null, 99, null
   );
@@ -1002,7 +1002,7 @@ app.get("/api/public/settings", (req, res) => {
 // ---------- BANSOS TOKEN (tanpa login, maks 2 key per pengunjung) ----------
 const BANSOS_KEY_LIMIT = 2;
 // Peta nama publik -> id model upstream (server-side saja, tidak pernah dikirim ke klien).
-const BANSOS_MODEL_MAP = { "codestral-latest": "codestral/codestral-latest", "qwen3.6-27b": "groq/qwen/qwen3.6-27b", "gpt-oss-20b": "groq/openai/gpt-oss-20b", "mistral-large-latest": "mistral/mistral-large-latest", "gpt-oss-120b": "groq/openai/gpt-oss-120b", "gemini-2.5-flash": "google/gemini-2.5-flash" };
+const BANSOS_MODEL_MAP = { "codestral-latest": "codestral/codestral-latest", "qwen3.6-27b": "groq/qwen/qwen3.6-27b", "gpt-oss-20b": "groq/openai/gpt-oss-20b", "mistral-large-latest": "mistral/mistral-large-latest", "gpt-oss-120b": "groq/openai/gpt-oss-120b" };
 const BANSOS_PER_ACCOUNT_DAILY = 500000;
 function bansosProvider() { return db.prepare("SELECT * FROM providers WHERE brand_name='Bansos'").get() || null; }
 function bansosDay() { return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10); }
