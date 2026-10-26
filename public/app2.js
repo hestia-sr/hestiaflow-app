@@ -131,7 +131,7 @@ function renderBansos() {
   if (mCount && BANSOS.models.length) mCount.textContent = BANSOS.models.length + " model pilihan";
   if (mBox) {
     mBox.innerHTML = BANSOS.models.length
-      ? `<div class="lbl">Model yang tersedia di Bansos</div><div>` + BANSOS.models.map((m) => `<span class="chip model">${esc(m)}</span>${BANSOS.notes[m] ? ` <span class="muted" style="font-size:12px">${esc(BANSOS.notes[m])}</span> ` : " "}`).join("") + `</div>`
+      ? `<div class="lbl">Model yang tersedia di Bansos</div><div>` + BANSOS.models.map((m) => `<span class="chip model">${esc(m)}</span> `).join("") + `</div>`
       : "";
   }
 }
