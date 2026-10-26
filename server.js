@@ -679,23 +679,57 @@ async function tryAutoRegisterBestllm(provider) {
 
 async function tryAutoRegisterNearresearch(provider) {
   // Near Research (2026-10-18): POST /api/signup {email,password} -> {key, balance:0.25}. Tanpa verifikasi, tanpa captcha.
+  // Premium pakai jalur yang SAMA seperti Gratis (Luna): scrap proxy + UA acak dulu, direct hanya sebagai jalan terakhir.
   const siteBase = "https://nearresearch.com";
   const apiBase = siteBase + "/v1";
   const tempEmail = `near${Date.now()}${Math.floor(Math.random()*9999)}@tempomail.id`;
   const tempPassword = `Near${Math.floor(100000+Math.random()*900000)}@#`;
-  try {
-    const r = await fetch(siteBase + "/api/signup", {
+  const doSignup = async (proxy) => {
+    const opts = {
       method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "HestiaFlow/1.0" },
+      headers: { "Content-Type": "application/json", "User-Agent": randUA() },
       body: JSON.stringify({ email: tempEmail, password: tempPassword })
-    });
-    const j = await r.json().catch(() => null);
+    };
+    if (proxy) { const d = proxyDispatcher(proxy); if (d) opts.dispatcher = d; }
+    const res = await fetch(siteBase + "/api/signup", opts);
+    const jj = await res.json().catch(() => null);
+    return { res, jj };
+  };
+  try {
+    // Coba lewat proxy hasil scrap dulu (maks 3, seperti Luna); direct hanya bila proxy habis/gagal.
+    const proxies = await fetchProxyList();
+    let r = null, j = null;
+    const maxProxyTries = Math.min(3, proxies.length);
+    for (let pi = 0; pi < maxProxyTries; pi++) {
+      const p = proxies[Math.floor(Math.random() * proxies.length)];
+      try {
+        const attempt = await doSignup(p);
+        r = attempt.res; j = attempt.jj;
+        console.log(`[nearresearch] signup status=${r.status} ok=${r.ok} hasKey=${!!(j && j.key)} via=proxy${pi + 1}`);
+        if (r.ok) break;
+        if (r.status !== 403 && r.status !== 429) break;
+      } catch (e) { console.log(`[nearresearch] signup via=proxy${pi + 1} exception ${e && e.message ? e.message : "unknown"}`); }
+    }
+    if (!r || !r.ok) {
+      const attempt = await doSignup(null);
+      r = attempt.res; j = attempt.jj;
+      console.log(`[nearresearch] signup status=${r.status} ok=${r.ok} hasKey=${!!(j && j.key)} via=direct`);
+    }
     const newKey = j && j.key;
     if (!r.ok || !newKey) { console.log("[nearresearch] signup failed"); return null; }
     let verified = false;
     try {
-      const vr = await fetch(apiBase + "/models", { headers: { "Authorization": "Bearer " + newKey, "User-Agent": "HestiaFlow/1.0" } });
-      verified = vr.ok;
+      const vProxies = await fetchProxyList();
+      const vProxy = vProxies.length ? vProxies[Math.floor(Math.random() * vProxies.length)] : null;
+      const mkVerify = (proxy) => {
+        const o = { headers: { "Authorization": "Bearer " + newKey, "User-Agent": randUA() } };
+        if (proxy) { const d = proxyDispatcher(proxy); if (d) o.dispatcher = d; }
+        return o;
+      };
+      let vr = null;
+      if (vProxy) { try { vr = await fetch(apiBase + "/models", mkVerify(vProxy)); } catch {} }
+      if (!vr || !vr.ok) { try { vr = await fetch(apiBase + "/models", mkVerify(null)); } catch {} }
+      verified = !!(vr && vr.ok);
     } catch {}
     console.log(`[nearresearch] auto-register ok, verified=${verified}, balance=${j.balance}`);
     return { upstreamApiKey: newKey, upstreamBaseUrl: apiBase, tempEmail, tempPassword, live: verified };
