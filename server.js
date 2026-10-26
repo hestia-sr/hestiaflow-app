@@ -810,9 +810,20 @@ async function doHarvest({ userId, providerId, count }) {
   if (!provider) throw new Error("provider_not_found");
   if (!Number.isInteger(count) || count < 1 || count > 5000) throw new Error("count_must_be_1_to_5000");
   const tier = db.prepare("SELECT * FROM tiers WHERE id=?").get(provider.tier_id);
-  // Pro DIKUNCI sementara (2026-10-18): provider OpenToke mati (verifikasi gak masuk, API error).
-  if (tier && tier.slug === "pro") throw new Error("Tier Pro sedang dalam perbaikan. Coba lagi nanti.");
-  if (tier && (tier.slug === "plus" || tier.slug === "premium")) throw new Error("Segera Hadir!");
+  // Tangga panen (aturan Hestia 2026-10-26): Plus → Plus+Gratis · Pro → Plus+Gratis ·
+  // Premium → Pro+Plus+Gratis. Tier Premium sendiri masih "Segera Hadir" untuk semua.
+  // Plus diatur cek peringkat di bawah (peringkat >= plus lolos).
+  if (tier && tier.slug === "premium") throw new Error("Segera Hadir!");
+  if (tier && tier.slug === "pro" && userId != null) {
+    const pu = db.prepare("SELECT COALESCE(tier_slug,'gratis') AS tier_slug,tier_expires_at FROM users WHERE id=?").get(userId);
+    if (effectiveTierSlug(pu) !== "premium") throw new Error("Kamu tidak Bisa Memilih Menu ini Segera Upgrade Paket kamu");
+  }
+  // Paket efektif si pemanen (buat gerbang jam gratis di bawah).
+  let harvesterTier = "gratis";
+  if (userId != null) {
+    const hu = db.prepare("SELECT COALESCE(tier_slug,'gratis') AS tier_slug,tier_expires_at FROM users WHERE id=?").get(userId);
+    harvesterTier = effectiveTierSlug(hu);
+  }
   // Kunci tier: user tidak bisa panen tier di atas paketnya (admin userId=null = bebas).
   if (userId != null && tier && TIER_RANK[tier.slug] != null) {
     const u = db.prepare("SELECT COALESCE(tier_slug,'gratis') AS tier_slug,tier_expires_at FROM users WHERE id=?").get(userId);
@@ -825,8 +836,9 @@ async function doHarvest({ userId, providerId, count }) {
     const existing = db.prepare("SELECT COUNT(*) AS c FROM api_keys WHERE user_id=? AND tier_id=?").get(userId, tier.id).c;
     if (existing + count > limit) throw new Error(`Limit Tier ${tier.name || tier.slug}: maks ${limit} akun. Kamu sudah punya ${existing} akun.`);
   }
-  // Gratis: 2 hari TOTAL (dari panen pertama). Abis 2 hari, GAK BISA panen lagi (harus upgrade).
-  if (userId != null && tier && tier.slug === "gratis") {
+  // Gratis: 2 hari TOTAL (dari panen pertama) — HANYA selama paket efektif user masih Gratis.
+  // User dengan voucher aktif (Plus/Pro/Premium) bebas dari jam gratis: voucher = perpanjangan masa aktif (aturan Hestia 2026-10-26).
+  if (userId != null && tier && tier.slug === "gratis" && harvesterTier === "gratis") {
     const u = db.prepare("SELECT gratis_started_at FROM users WHERE id=?").get(userId);
     const now = new Date();
     if (u && u.gratis_started_at) {
@@ -857,7 +869,8 @@ async function doHarvest({ userId, providerId, count }) {
   if (isGratisCombine) {
     const keyValue = `hgw-${randHex(16)}`;
     const keyPrefix = keyValue.slice(0, 12);
-    const expiresAt = new Date(Date.now() + 2*24*60*60*1000).toISOString();
+    // Key Gratis dari user berbayar (voucher aktif) tidak distempel mati 2 hari.
+    const expiresAt = harvesterTier === "gratis" ? new Date(Date.now() + 2*24*60*60*1000).toISOString() : null;
     const k = db.prepare("INSERT INTO api_keys (user_id,provider_id,tier_id,key_value,key_prefix,credit,models_json,model_source,model_count,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
       .run(userId, providerId, provider.tier_id, keyValue, keyPrefix, null, JSON.stringify(models), source, provider.model_count, expiresAt);
     const apiKeyId = k.lastInsertRowid;
@@ -888,8 +901,8 @@ for (let i = 1; i <= count; i++) {
     const keyValue = `hgw-${randHex(16)}`;
     const keyPrefix = keyValue.slice(0, 12);
     const credit = provider.default_credit != null ? provider.default_credit : null;
-    // Gratis (tanpa voucher): masa pakai 2 hari aja (2026-10-18).
-    const expiresAt = (tier && tier.slug === "gratis") ? new Date(Date.now() + 2*24*60*60*1000).toISOString() : null;
+    // Gratis (tanpa voucher): masa pakai 2 hari aja (2026-10-18). Dengan voucher aktif: tanpa stempel mati.
+    const expiresAt = (tier && tier.slug === "gratis" && harvesterTier === "gratis") ? new Date(Date.now() + 2*24*60*60*1000).toISOString() : null;
     const k = db.prepare("INSERT INTO api_keys (user_id,provider_id,tier_id,key_value,key_prefix,credit,models_json,model_source,model_count,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
       .run(userId, providerId, provider.tier_id, keyValue, keyPrefix, credit, JSON.stringify(models), source, provider.model_count, expiresAt);
     let auto = null;
@@ -1295,11 +1308,12 @@ function gatewayAuth(req) {
     } catch {}
   }
   // Cek masa Gratis TOTAL (2 hari dari panen pertama) — 2026-10-18. Abis 2 hari, key mati total.
+  // Berlaku HANYA selama paket efektif pemilik key masih Gratis; voucher aktif = masa aktif diperpanjang (2026-10-26).
   if (!key._expired && key.user_id && key.tier_id) {
     const tier = db.prepare("SELECT slug FROM tiers WHERE id=?").get(key.tier_id);
     if (tier && tier.slug === "gratis") {
-      const u = db.prepare("SELECT gratis_started_at FROM users WHERE id=?").get(key.user_id);
-      if (u && u.gratis_started_at && Date.now() - new Date(u.gratis_started_at).getTime() > 2*24*60*60*1000) {
+      const u = db.prepare("SELECT gratis_started_at, COALESCE(tier_slug,'gratis') AS tier_slug, tier_expires_at FROM users WHERE id=?").get(key.user_id);
+      if (u && u.gratis_started_at && effectiveTierSlug(u) === "gratis" && Date.now() - new Date(u.gratis_started_at).getTime() > 2*24*60*60*1000) {
         key._expired = true;
       }
     }
