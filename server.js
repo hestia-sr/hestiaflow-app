@@ -322,6 +322,33 @@ function proxyDispatcher(proxyHostPort) {
   } catch { return undefined; }
 }
 
+// Proxy yang SUDAH DISARING HIDUP ke satu upstream (pola script Python
+// nearresearch_register.py yang terbukti cepat di Termux): probe GET ke site
+// dengan timeout pendek, yang gagal dibuang. Di-cache 5 menit seperti scrap
+// agar satu panen multi-akun tidak mengulang probe tiap akun.
+let _proxyOkCache = { site: "", list: [], at: 0 };
+async function fetchProxyHidup(siteBase) {
+  if (_proxyOkCache.site === siteBase && Date.now() - _proxyOkCache.at < 300000) return _proxyOkCache.list;
+  const semua = await fetchProxyList();
+  const kandidat = [...semua].sort(() => Math.random() - 0.5).slice(0, 40);
+  const hidup = [];
+  for (let i = 0; i < kandidat.length && hidup.length < 6; i += 10) {
+    const batch = kandidat.slice(i, i + 10);
+    const hasil = await Promise.all(batch.map(async (x) => {
+      try {
+        const d = proxyDispatcher(x);
+        if (!d) return null;
+        const r = await fetch(siteBase + "/", { headers: { "User-Agent": randUA() }, dispatcher: d, signal: AbortSignal.timeout(7000) });
+        return r.status > 0 ? x : null;
+      } catch { return null; }
+    }));
+    for (const x of hasil) if (x) hidup.push(x);
+  }
+  console.log(`[nearresearch] proxy hidup: ${hidup.length} dari ${kandidat.length} kandidat`);
+  _proxyOkCache = { site: siteBase, list: hidup, at: Date.now() };
+  return hidup;
+}
+
 // Luna-specific auto-register (provider brand "Luna").
 // Flow (no CAPTCHA, no email verification): POST /api/auth/sign-up/email
 // {name,email,password} -> session cookies -> POST /api/v1/keys -> {key}.
@@ -688,7 +715,8 @@ async function tryAutoRegisterNearresearch(provider) {
     const opts = {
       method: "POST",
       headers: { "Content-Type": "application/json", "User-Agent": randUA() },
-      body: JSON.stringify({ email: tempEmail, password: tempPassword })
+      body: JSON.stringify({ email: tempEmail, password: tempPassword }),
+      signal: AbortSignal.timeout(25000)
     };
     if (proxy) { const d = proxyDispatcher(proxy); if (d) opts.dispatcher = d; }
     const res = await fetch(siteBase + "/api/signup", opts);
@@ -696,8 +724,9 @@ async function tryAutoRegisterNearresearch(provider) {
     return { res, jj };
   };
   try {
-    // Coba lewat proxy hasil scrap dulu (maks 3, seperti Luna); direct hanya bila proxy habis/gagal.
-    const proxies = await fetchProxyList();
+    // Coba lewat proxy yang SUDAH DISARING HIDUP dulu (maks 3, seperti Luna dan
+    // script Python); direct hanya bila proxy habis/gagal.
+    const proxies = await fetchProxyHidup(siteBase);
     let r = null, j = null, winProxy = null;
     const maxProxyTries = Math.min(3, proxies.length);
     for (let pi = 0; pi < maxProxyTries; pi++) {
@@ -722,7 +751,7 @@ async function tryAutoRegisterNearresearch(provider) {
       // Verify pakai proxy PEMENANG signup dulu (sudah terbukti hidup ke upstream ini);
       // jangan undi proxy baru yang sering mati. Direct hanya bila proxy pemenang gagal.
       const mkVerify = (proxy) => {
-        const o = { headers: { "Authorization": "Bearer " + newKey, "User-Agent": randUA() } };
+        const o = { headers: { "Authorization": "Bearer " + newKey, "User-Agent": randUA() }, signal: AbortSignal.timeout(25000) };
         if (proxy) { const d = proxyDispatcher(proxy); if (d) o.dispatcher = d; }
         return o;
       };
