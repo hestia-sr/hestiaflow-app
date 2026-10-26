@@ -85,7 +85,7 @@ function render() {
   loadUser();
 }
 
-let BANSOS = { keys: [], limit: 2, locked: false, pool: null };
+let BANSOS = { keys: [], limit: 2, locked: false, pool: null, models: [], notes: {} };
 let bansosTimer = null;
 function fmtID(n) { return Number(n || 0).toLocaleString("id-ID"); }
 function bansosSection() {
@@ -93,7 +93,8 @@ function bansosSection() {
     <div class="tier-head"><span class="badge bansos">\uD83C\uDF81 BANSOS</span><div class="tier-price"><div class="price">GRATIS</div><div class="price-dur">Untuk Semua Pengguna</div></div></div>
     <div class="brand"><img class="bansos-logo" src="/logos/bansos.jpg" alt="Bansos" />
     <div><h3>Bansos Token 4.5 Juta</h3><p>Token AI gratis untuk semua pengguna, tanpa login. Buat API key kamu sendiri (maksimal 2 key) dan pakai di Base URL HestiaFlow. Kuota 4.5 juta token per hari dipakai bersama \u2014 habis hari ini, besok ngisi lagi.</p></div></div>
-    <div><span class="chip">4 model pilihan</span><span class="chip">Tanpa login</span><span class="chip">Maks 2 API key</span></div>
+    <div><span class="chip" id="bansosModelCount">Model pilihan</span><span class="chip">Tanpa login</span><span class="chip">Maks 2 API key</span></div>
+    <div id="bansosModels" style="margin-top:10px"></div>
     <div class="bansos-pool">
       <div class="bansos-pool-top"><span>Sisa token bansos hari ini</span><span class="bansos-pool-num" id="bansosRemain">Memuat\u2026</span></div>
       <div class="bansos-bar"><div class="bansos-bar-fill" id="bansosBarFill"></div></div>
@@ -126,11 +127,19 @@ function renderBansos() {
     if (BANSOS.locked) { btn.disabled = true; btn.textContent = "\uD83D\uDD12 Sudah 2 API Key"; }
     else { btn.disabled = false; btn.textContent = "Buat API Key"; }
   }
+  const mBox = $("#bansosModels"), mCount = $("#bansosModelCount");
+  if (mCount && BANSOS.models.length) mCount.textContent = BANSOS.models.length + " model pilihan";
+  if (mBox) {
+    mBox.innerHTML = BANSOS.models.length
+      ? `<div class="lbl">Model yang tersedia di Bansos</div><div>` + BANSOS.models.map((m) => `<span class="chip model">${esc(m)}</span>${BANSOS.notes[m] ? ` <span class="muted" style="font-size:12px">${esc(BANSOS.notes[m])}</span> ` : " "}`).join("") + `</div>`
+      : "";
+  }
 }
 async function loadBansos() {
   if (!$("#bansosSection")) return;
   try { const p = await api("/api/bansos/pool"); BANSOS.pool = p; } catch {}
   try { const m = await api("/api/bansos/my-keys"); BANSOS.keys = m.keys || []; BANSOS.limit = m.limit || 2; BANSOS.locked = !!m.locked; } catch {}
+  try { const pv = await api("/api/public/providers"); const b = (pv.providers || []).find((x) => x.brand === "Bansos"); if (b) { BANSOS.models = b.models || []; BANSOS.notes = b.modelNotes || {}; } } catch {}
   renderBansos();
   if (!bansosTimer) bansosTimer = setInterval(refreshBansosPool, 30000);
 }
