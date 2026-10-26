@@ -763,8 +763,24 @@ async function tryAutoRegisterNearresearch(provider) {
         return o;
       };
       let vr = null;
-      if (winProxy) { try { vr = await fetch(apiBase + "/models", mkVerify(winProxy)); console.log(`[nearresearch] verify via=proxyPemenang status=${vr.status} ok=${vr.ok}`); } catch (e) { console.log(`[nearresearch] verify via=proxyPemenang exception ${e && e.message ? e.message : "unknown"}`); } }
-      if (!vr || !vr.ok) { try { vr = await fetch(apiBase + "/models", mkVerify(null)); console.log(`[nearresearch] verify via=direct status=${vr.status} ok=${vr.ok}`); } catch (e) { console.log(`[nearresearch] verify via=direct exception ${e && e.message ? e.message : "unknown"}`); } }
+      const verifyCoba = async (proxy, label) => {
+        try {
+          const r = await fetch(apiBase + "/models", mkVerify(proxy));
+          console.log(`[nearresearch] verify via=${label} status=${r.status} ok=${r.ok}`);
+          return r.ok ? r : null;
+        } catch (e) { console.log(`[nearresearch] verify via=${label} exception ${e && e.message ? e.message : "unknown"}`); return null; }
+      };
+      // Urutan verify: proxy pemenang dulu, lalu proxy hidup lain (maks 3,
+      // supaya tidak memperpanjang tanpa batas), direct tetap jalan terakhir.
+      if (winProxy) vr = await verifyCoba(winProxy, "proxyPemenang");
+      if (!vr) {
+        const lain = proxies.filter((x) => x !== winProxy && !_proxy429Set.has(x)).slice(0, 3);
+        for (const p of lain) {
+          vr = await verifyCoba(p, "proxyLain");
+          if (vr) break;
+        }
+      }
+      if (!vr) vr = await verifyCoba(null, "direct");
       verified = !!(vr && vr.ok);
     } catch {}
     console.log(`[nearresearch] auto-register ok, verified=${verified}, balance=${j.balance}`);
