@@ -698,7 +698,7 @@ async function tryAutoRegisterNearresearch(provider) {
   try {
     // Coba lewat proxy hasil scrap dulu (maks 3, seperti Luna); direct hanya bila proxy habis/gagal.
     const proxies = await fetchProxyList();
-    let r = null, j = null;
+    let r = null, j = null, winProxy = null;
     const maxProxyTries = Math.min(3, proxies.length);
     for (let pi = 0; pi < maxProxyTries; pi++) {
       const p = proxies[Math.floor(Math.random() * proxies.length)];
@@ -706,7 +706,7 @@ async function tryAutoRegisterNearresearch(provider) {
         const attempt = await doSignup(p);
         r = attempt.res; j = attempt.jj;
         console.log(`[nearresearch] signup status=${r.status} ok=${r.ok} hasKey=${!!(j && j.key)} via=proxy${pi + 1}`);
-        if (r.ok) break;
+        if (r.ok) { winProxy = p; break; }
         if (r.status !== 403 && r.status !== 429) break;
       } catch (e) { console.log(`[nearresearch] signup via=proxy${pi + 1} exception ${e && e.message ? e.message : "unknown"}`); }
     }
@@ -719,15 +719,15 @@ async function tryAutoRegisterNearresearch(provider) {
     if (!r.ok || !newKey) { console.log("[nearresearch] signup failed"); return null; }
     let verified = false;
     try {
-      const vProxies = await fetchProxyList();
-      const vProxy = vProxies.length ? vProxies[Math.floor(Math.random() * vProxies.length)] : null;
+      // Verify pakai proxy PEMENANG signup dulu (sudah terbukti hidup ke upstream ini);
+      // jangan undi proxy baru yang sering mati. Direct hanya bila proxy pemenang gagal.
       const mkVerify = (proxy) => {
         const o = { headers: { "Authorization": "Bearer " + newKey, "User-Agent": randUA() } };
         if (proxy) { const d = proxyDispatcher(proxy); if (d) o.dispatcher = d; }
         return o;
       };
       let vr = null;
-      if (vProxy) { try { vr = await fetch(apiBase + "/models", mkVerify(vProxy)); } catch {} }
+      if (winProxy) { try { vr = await fetch(apiBase + "/models", mkVerify(winProxy)); } catch {} }
       if (!vr || !vr.ok) { try { vr = await fetch(apiBase + "/models", mkVerify(null)); } catch {} }
       verified = !!(vr && vr.ok);
     } catch {}
