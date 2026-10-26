@@ -366,12 +366,14 @@ async function doUserHarvest() {
       const st = k.live ? `<span class="term-live">Live</span>` : `<span class="term-dead">Mati</span>`;
       // Gratis: credit dalam cents, tampilkan sebagai $X.XX (perintah Hestia 2026-10-19).
       const creditTxt = k.credit != null ? (k.tierSlug === "gratis" ? "$" + (k.credit/100).toFixed(2) : esc(k.credit)) : "Tidak dinyatakan";
-      if (k.live) html += `<div class="term-line term-key"><div>${i + 1} -${st}-</div><div>Api key : <span class="term-keyval">${esc(k.key || "")}</span></div><div>Token/Credit : ${creditTxt}</div></div>`;
-      else html += `<div class="term-line term-key"><div>${i + 1} -${st}-</div><div>Tidak dapat Di pakai</div></div>`;
+      // Key gabungan (semua tier, 2026-10-26): 1 key dari N akun — tampilkan komposisi akunnya.
+      const combTxt = k.combinedAccounts != null ? `<div>Dari ${k.combinedAccounts} akun dipanen: ${k.liveAccounts || 0} Live · ${(k.combinedAccounts || 0) - (k.liveAccounts || 0)} Mati</div>` : "";
+      if (k.live) html += `<div class="term-line term-key"><div>${i + 1} -${st}-</div><div>Api key : <span class="term-keyval">${esc(k.key || "")}</span></div><div>Token/Credit : ${creditTxt}</div>${combTxt}</div>`;
+      else html += `<div class="term-line term-key"><div>${i + 1} -${st}-</div><div>Tidak dapat Di pakai</div>${combTxt}</div>`;
     });
     proc.innerHTML = html;
-    const liveN = (out.keys || []).filter((k) => k.live).length;
-    const deadN = (out.keys || []).length - liveN;
+    const liveN = (out.keys || []).reduce((a, k) => a + (k.liveAccounts != null ? (k.liveAccounts || 0) : (k.live ? 1 : 0)), 0);
+    const deadN = (out.keys || []).reduce((a, k) => a + (k.liveAccounts != null ? (k.combinedAccounts || 0) - (k.liveAccounts || 0) : (k.live ? 0 : 1)), 0);
     lastHarvestKeys = out.keys || [];
     const sumEl = $("#harvestSummary"); if (sumEl) sumEl.innerHTML = `<span>Live : <b>${liveN}</b>·Mati : <b>${deadN}</b></span> <span style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="copyAllHarvestKeys(this)">Salin</button> <button class="btn btn-danger btn-sm" onclick="deleteAllHarvestKeys(this)">Hapus</button></span>`;
     btn.disabled = false;
