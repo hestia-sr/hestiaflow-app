@@ -1162,6 +1162,16 @@ app.get("/api/admin/keys", requireAdmin, (req, res) => {
   const rows = db.prepare(`SELECT k.*, u.email AS owner_email, u.name AS owner_name, p.brand_name AS brand, t.slug AS tier_slug FROM api_keys k LEFT JOIN users u ON u.id=k.user_id LEFT JOIN providers p ON p.id=k.provider_id LEFT JOIN tiers t ON t.id=k.tier_id ${q} ORDER BY k.created_at DESC LIMIT 500`).all(...args);
   res.json({ ok: true, keys: rows.map((k) => ({ id: k.id, keyPrefix: k.key_prefix, ownerEmail: k.owner_email, ownerName: k.owner_name, providerBrand: k.brand, tierSlug: k.tier_slug, credit: k.credit, models: JSON.parse(k.models_json || "[]"), modelSource: k.model_source, modelCount: k.model_count, createdAt: k.created_at })) });
 });
+// Admin: delete any gateway key (Panel Admin > Kunci).
+// Removes the HestiaFlow key + the stored harvested-account data linked to it.
+app.delete("/api/admin/keys/:id", requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ ok: false, error: "invalid_id" });
+  db.prepare("DELETE FROM harvested_accounts WHERE api_key_id=?").run(id);
+  const out = db.prepare("DELETE FROM api_keys WHERE id=?").run(id);
+  if (!out.changes) return res.status(404).json({ ok: false, error: "key_not_found" });
+  res.json({ ok: true, deleted: true });
+});
 app.get("/api/admin/tiers", requireAdmin, (req, res) => {
   const tiers = db.prepare("SELECT * FROM tiers ORDER BY sort_order").all().map((t) => ({ ...t, providerCount: db.prepare("SELECT COUNT(*) c FROM providers WHERE tier_id=?").get(t.id).c }));
   res.json({ ok: true, tiers });
