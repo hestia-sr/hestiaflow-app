@@ -115,7 +115,8 @@ function renderBansos() {
   }
   const box = $("#bansosKeys");
   if (box) {
-    if (BANSOS.keys.length) {
+    if (BANSOS.pool && BANSOS.pool.locked) box.innerHTML = "";
+    else if (BANSOS.keys.length) {
       box.innerHTML = `<div class="keybox bansos-keys"><div class="lbl">API key kamu (${BANSOS.keys.length}/${BANSOS.limit})</div>` +
         BANSOS.keys.map((k) => `<span class="key-row"><span class="key-row-val">${esc(k.key)}</span> <button class="btn btn-ghost btn-sm" style="color:#d4af37;border-color:#d4af37" onclick="copyText('${esc(k.key)}', this)">Copy</button></span>`).join("") + "</div>";
     } else box.innerHTML = "";
