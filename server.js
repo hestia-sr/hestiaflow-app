@@ -994,6 +994,7 @@ app.get("/api/public/settings", (req, res) => {
 
 // ---------- BANSOS TOKEN (tanpa login, maks 2 key per pengunjung) ----------
 const BANSOS_KEY_LIMIT = 2;
+const BANSOS_LOCKED = true; // 2026-10-26 malam: Bansos DIKUNCI sementara (perintah Hestia "kunci aja dulu").
 // Peta nama publik -> id model upstream (server-side saja, tidak pernah dikirim ke klien).
 const BANSOS_MODEL_MAP = { "codestral-latest": "codestral/codestral-latest", "qwen3.6-27b": "groq/qwen/qwen3.6-27b", "gpt-oss-20b": "groq/openai/gpt-oss-20b", "mistral-large-latest": "mistral/mistral-large-latest", "gpt-oss-120b": "groq/openai/gpt-oss-120b" };
 const BANSOS_PER_ACCOUNT_DAILY = 500000;
@@ -1030,7 +1031,7 @@ function getAnonId(req, res) {
 }
 app.get("/api/bansos/pool", (req, res) => {
   const p = bansosPool();
-  res.json({ ok: true, total: p.total, used: p.used, remaining: p.remaining, accounts: p.accounts });
+  res.json({ ok: true, total: p.total, used: p.used, remaining: p.remaining, accounts: p.accounts, locked: BANSOS_LOCKED });
 });
 app.get("/api/bansos/my-keys", (req, res) => {
   const anon = getAnonId(req, res);
@@ -1043,6 +1044,7 @@ app.post("/api/bansos/keys", (req, res) => {
   const anon = getAnonId(req, res);
   const p = bansosProvider();
   if (!p) return res.status(503).json({ ok: false, error: "Bansos belum tersedia." });
+  if (BANSOS_LOCKED) return res.status(403).json({ ok: false, error: "Bansos sedang dikunci sementara. Coba lagi nanti ya.", code: "bansos_locked" });
   const cnt = db.prepare("SELECT COUNT(*) c FROM api_keys WHERE anon_id=? AND provider_id=? AND status='active'").get(anon, p.id).c;
   if (cnt >= BANSOS_KEY_LIMIT) return res.status(403).json({ ok: false, error: "Kamu sudah buat 2 API key. Tombol buat key terkunci.", code: "bansos_key_limit" });
   let models = [];
@@ -1380,6 +1382,7 @@ app.post("/v1/chat/completions", async (req, res) => {
   let upstreamCandidates = [];
   // BANSOS: key anonim memakai pool akun (workers) bergiliran, yang paling sedikit dipakai duluan.
   const isBansosKey = !!(key.anon_id && provider);
+  if (isBansosKey && BANSOS_LOCKED) return res.status(403).json({ error: { message: "Bansos sedang dikunci sementara. Coba lagi nanti ya.", type: "invalid_request_error", param: null, code: "bansos_locked" } });
   if (isBansosKey) {
     const poolNow = bansosPool();
     if (poolNow.remaining <= 0) return res.status(429).json({ error: { message: "Token bansos hari ini habis. Besok ngisi lagi!", type: "rate_limit_error", param: null, code: "bansos_pool_empty" } });
