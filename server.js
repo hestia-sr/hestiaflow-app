@@ -828,7 +828,7 @@ async function doHarvest({ userId, providerId, count }) {
   // Per-tier TOTAL harvest limit per user (admin userId=null = unlimited).
   if (userId != null && tier && TIER_HARVEST_LIMIT[tier.slug] != null) {
     const limit = TIER_HARVEST_LIMIT[tier.slug];
-    const existing = db.prepare("SELECT COUNT(*) AS c FROM api_keys WHERE user_id=? AND tier_id=?").get(userId, tier.id).c;
+    const existing = db.prepare("SELECT COUNT(*) AS c FROM harvested_accounts WHERE user_id=? AND tier_id=?").get(userId, tier.id).c;
     if (existing + count > limit) throw new Error(`Limit Tier ${tier.name || tier.slug}: maks ${limit} akun. Kamu sudah punya ${existing} akun.`);
   }
   // Gratis: 2 hari TOTAL (dari panen pertama) — HANYA selama paket efektif user masih Gratis.
@@ -857,25 +857,24 @@ async function doHarvest({ userId, providerId, count }) {
   // Gratis tier: enforce max 2 models.
   if (tier && tier.max_models != null && models.length > tier.max_models) models = models.slice(0, tier.max_models);
   const logs = []; const keys = [];
-  // Gratis: gabung N akun jadi 1 key (2026-10-18, perintah Hestia "Tier Gratis Aja Dulu").
+  // SEMUA tier: gabung N akun jadi 1 key (2026-10-26, perintah Hestia; sebelumnya cuma Gratis sejak 2026-10-18).
   // 1 api_keys row, N harvested_accounts rows. Gateway failover otomatis.
-
-    const isGratisCombine = (tier && tier.slug === "gratis");
-  if (isGratisCombine) {
+  {
     const keyValue = `hgw-${randHex(16)}`;
     const keyPrefix = keyValue.slice(0, 12);
-    // Key Gratis dari user berbayar (voucher aktif) tidak distempel mati 2 hari.
-    const expiresAt = harvesterTier === "gratis" ? new Date(Date.now() + 2*24*60*60*1000).toISOString() : null;
+    // Stempel mati 2 hari HANYA untuk panen tier Gratis oleh user paket-Gratis efektif.
+    const expiresAt = (tier && tier.slug === "gratis" && harvesterTier === "gratis") ? new Date(Date.now() + 2*24*60*60*1000).toISOString() : null;
     const k = db.prepare("INSERT INTO api_keys (user_id,provider_id,tier_id,key_value,key_prefix,credit,models_json,model_source,model_count,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
       .run(userId, providerId, provider.tier_id, keyValue, keyPrefix, null, JSON.stringify(models), source, provider.model_count, expiresAt);
     const apiKeyId = k.lastInsertRowid;
     let liveCount = 0;
+    let creditTotal = null;
     for (let i = 1; i <= count; i++) {
       const tempEmail = `hf_${randStr(10)}@hestiaflow.internal`;
       const tempPassword = randStr(16, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
       let auto = null;
       try { auto = await tryAutoRegister(provider, tempEmail, tempPassword); } catch { auto = null; }
-      if (auto && auto.live) liveCount++;
+      if (auto && auto.live) { liveCount++; if (provider.default_credit != null) creditTotal = (creditTotal || 0) + provider.default_credit; }
       const storeEmail = (auto && auto.tempEmail) ? auto.tempEmail : tempEmail;
       const storePass = (auto && auto.tempPassword) ? auto.tempPassword : tempPassword;
       db.prepare("INSERT INTO harvested_accounts (api_key_id,user_id,provider_id,tier_id,temp_email,temp_password,upstream_api_key,upstream_base_url) VALUES (?,?,?,?,?,?,?,?)")
@@ -884,36 +883,13 @@ async function doHarvest({ userId, providerId, count }) {
       logHarvest(userId, providerId, msg);
       logs.push(msg);
     }
-    // Credit null untuk Gratis (bestllmapi auto-register di-scrap 2026-10-19, IP diblokir).
-    db.prepare("UPDATE api_keys SET credit=? WHERE id=?").run(null, apiKeyId);
-    keys.push({ id: apiKeyId, providerBrand: provider.brand_name, tierSlug: tier ? tier.slug : null, key: userId ? keyValue : undefined, keyPrefix, credit: null, models, modelSource: source, modelCount: provider.model_count, live: liveCount > 0, combinedAccounts: count, liveAccounts: liveCount });
+    // Credit key gabungan = total credit semua akun Live (akun Live x credit per akun).
+    // Gratis tetap null: Luna tidak punya default_credit.
+    db.prepare("UPDATE api_keys SET credit=? WHERE id=?").run(creditTotal, apiKeyId);
+    keys.push({ id: apiKeyId, providerBrand: provider.brand_name, tierSlug: tier ? tier.slug : null, key: userId ? keyValue : undefined, keyPrefix, credit: creditTotal, models, modelSource: source, modelCount: provider.model_count, live: liveCount > 0, combinedAccounts: count, liveAccounts: liveCount });
     return { count, logs, keys, proxyTotal: _proxyCache.list.length };
   }
 
-for (let i = 1; i <= count; i++) {
-    const tempEmail = `hf_${randStr(10)}@hestiaflow.internal`;
-    const tempPassword = randStr(16, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
-    const keyValue = `hgw-${randHex(16)}`;
-    const keyPrefix = keyValue.slice(0, 12);
-    const credit = provider.default_credit != null ? provider.default_credit : null;
-    // Gratis (tanpa voucher): masa pakai 2 hari aja (2026-10-18). Dengan voucher aktif: tanpa stempel mati.
-    const expiresAt = (tier && tier.slug === "gratis" && harvesterTier === "gratis") ? new Date(Date.now() + 2*24*60*60*1000).toISOString() : null;
-    const k = db.prepare("INSERT INTO api_keys (user_id,provider_id,tier_id,key_value,key_prefix,credit,models_json,model_source,model_count,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
-      .run(userId, providerId, provider.tier_id, keyValue, keyPrefix, credit, JSON.stringify(models), source, provider.model_count, expiresAt);
-    let auto = null;
-    try { auto = await tryAutoRegister(provider, tempEmail, tempPassword); } catch { auto = null; }
-    if (auto) console.log(`[harvest] auto-register OK provider=${provider.id} key_id=${k.lastInsertRowid}`);
-    else console.log(`[harvest] auto-register unavailable provider=${provider.id} key_id=${k.lastInsertRowid} (fallback: no upstream key)`);
-    const storeEmail = (auto && auto.tempEmail) ? auto.tempEmail : tempEmail;
-    const storePass = (auto && auto.tempPassword) ? auto.tempPassword : tempPassword;
-    db.prepare("INSERT INTO harvested_accounts (api_key_id,user_id,provider_id,tier_id,temp_email,temp_password,upstream_api_key,upstream_base_url) VALUES (?,?,?,?,?,?,?,?)")
-      .run(k.lastInsertRowid, userId, providerId, provider.tier_id, storeEmail, storePass, auto ? auto.upstreamApiKey : null, auto ? auto.upstreamBaseUrl : null);
-    const msg = `Panen Akun ${i} Berhasil.`;
-    logHarvest(userId, providerId, msg);
-    logs.push(msg);
-    keys.push({ id: k.lastInsertRowid, providerBrand: provider.brand_name, tierSlug: tier ? tier.slug : null, key: userId ? keyValue : undefined, keyPrefix, credit, models, modelSource: source, modelCount: provider.model_count, live: auto ? !!auto.live : false });
-  }
-  return { count, logs, keys, proxyTotal: _proxyCache.list.length };
 }
 
 // ---------- auth ----------
@@ -1403,21 +1379,10 @@ app.post("/v1/chat/completions", async (req, res) => {
       .sort((a, b) => a.used - b.used);
     for (const x of sortedB) upstreamCandidates.push({ key: x.w.upstream_api_key, url: provider.upstream_url, workerId: x.w.id });
   }
-  // Cek tier untuk failover Gratis
-  let isGratisTier = false;
-  try {
-    const t = db.prepare("SELECT slug FROM tiers WHERE id=?").get(key.tier_id);
-    if (t && t.slug === "gratis") isGratisTier = true;
-  } catch {}
-  if (isGratisTier) {
-    // Gratis gabungan: ambil SEMUA akun, coba satu-satu (failover).
-    const has = db.prepare("SELECT upstream_api_key, upstream_base_url FROM harvested_accounts WHERE api_key_id=? AND upstream_api_key IS NOT NULL ORDER BY id ASC").all(key.id);
-    for (const h of has) {
-      upstreamCandidates.push({ key: h.upstream_api_key, url: h.upstream_base_url || (provider ? provider.upstream_url : null) });
-    }
-  } else {
-    const ha = db.prepare("SELECT upstream_api_key, upstream_base_url FROM harvested_accounts WHERE api_key_id=? AND upstream_api_key IS NOT NULL ORDER BY id DESC LIMIT 1").get(key.id);
-    if (ha) upstreamCandidates.push({ key: ha.upstream_api_key, url: ha.upstream_base_url || (provider ? provider.upstream_url : null) });
+  // Key gabungan (SEMUA tier sejak 2026-10-26): ambil SEMUA akun di belakang key, coba satu-satu (failover).
+  const has = db.prepare("SELECT upstream_api_key, upstream_base_url FROM harvested_accounts WHERE api_key_id=? AND upstream_api_key IS NOT NULL ORDER BY id ASC").all(key.id);
+  for (const h of has) {
+    upstreamCandidates.push({ key: h.upstream_api_key, url: h.upstream_base_url || (provider ? provider.upstream_url : null) });
   }
   if (upstreamCandidates.length === 0 && provider) {
     // Fallback ke provider-level
