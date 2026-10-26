@@ -107,16 +107,6 @@ footer img{width:30px;height:30px;border-radius:50%;object-fit:cover;border:1.5p
 .tier-side-opt.locked{opacity:.5;cursor:not-allowed}
 .tier-lock-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(20,8,20,.55);z-index:200;padding:20px}
 .tier-lock-box{background:var(--ivory);border:2px solid var(--gold);border-radius:16px;padding:24px;text-align:center;max-width:340px}
-.model-list-box{background:var(--ivory);border:2px solid var(--gold);border-radius:16px;padding:18px;width:100%;max-width:430px;max-height:82vh;display:flex;flex-direction:column}
-.model-list-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.model-list-head h3{margin:0;color:var(--plum)}
-.model-list-body{overflow-y:auto;margin-top:6px}
-.model-group-head{position:sticky;top:0;background:var(--gold);color:#4a1030;font-weight:700;font-size:13px;padding:6px 8px;border-radius:8px;margin:10px 0 2px}
-.model-group-head:first-child{margin-top:0}
-.model-row{padding:7px 4px;border-bottom:1px solid var(--line)}
-.model-row:last-child{border-bottom:none}
-.model-name{font-weight:600;word-break:break-all}
-.model-note{font-size:12px;color:#777;margin-top:1px}
 .tier-lock-box p{color:var(--plum);font-weight:700;font-size:16px;margin:0 0 16px}
 
 /* Locked tier cards */

@@ -3,11 +3,12 @@
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-let ME = null, TIERS = [], SETTINGS = { gatewayName: "HestiaFlow", baseUrl: "https://hestiaflow.xioo.me/v1" }, POOL = { workers: 0, ready: false };
+let ME = null, TIERS = [], SETTINGS = { gatewayName: "HestiaFlow", baseUrl: "https://api.hestia-gateway.id/v1" }, POOL = { workers: 0, ready: false };
 let adminTab = "user"; // 'user' | 'admin'
 let adminSection = "pengguna";
 let keyFilterUser = null;
 let adminCache = { users: [], keys: [], providers: [], workers: [], tiers: [], stats: {}, settings: {}, vouchers: [] };
+let deletePending = null;
 
 async function api(p, opts) {
   const r = await fetch(p, { headers: { "Content-Type": "application/json" }, ...(opts || {}) });
@@ -25,7 +26,7 @@ async function load() {
   try { const pub = await api("/api/public/tiers"); TIERS = pub.tiers || []; } catch {}
   try { const st = await api("/api/public/settings"); SETTINGS = st; } catch {}
   try { const pool = await api("/api/public/pool"); POOL = pool; } catch {}
-  const fb = $("#footBase"); if (fb) fb.textContent = SETTINGS.baseUrl || "https://hestiaflow.xioo.me/v1";
+  const fb = $("#footBase"); if (fb) fb.textContent = SETTINGS.baseUrl || "https://api.hestia-gateway.id/v1";
   renderAuth();
   render();
   loadBansos();
@@ -48,8 +49,8 @@ const TIER_PRICE = { plus: { amount: "Rp 5.000", dur: "3 Hari" }, pro: { amount:
 function tierShowcase() {
   return `<div class="section"><h2>Pilihan Paket Tier</h2>
   <div class="grid tiers">${TIERS.map((t) => {
-    const isLockedCard = false; // Semua kartu dibuka 2026-10-24 — akses tier berbayar diatur vocher (pangkat paket user), bukan gembok kartu
-    const cardClick = "";
+    const isLockedCard = t.slug === "plus" || t.slug === "pro" || t.slug === "premium";
+    const cardClick = isLockedCard ? (t.slug === "pro" ? "showTierLocked()" : "showComingSoon()") : "";
     return `
     <div class="card tier ${t.slug === "premium" ? "premium" : ""}${isLockedCard ? " locked-card" : ""}" ${isLockedCard ? `onclick="${cardClick}" style="cursor:pointer;position:relative;"` : ""}>
       ${isLockedCard ? `<div class="card-lock-overlay">🔒</div>` : ""}
@@ -58,7 +59,6 @@ function tierShowcase() {
         <div class="brand"><div class="medal ${t.slug === "premium" ? "gold" : ""}">${esc(p.brand.slice(0, 1))}</div>
         <div><h3>${esc(p.brand)}</h3><p>${esc(p.tagline || "")}</p></div></div>
         <div><span class="chip">${p.modelCount} model</span><span class="chip">${esc(p.creditNote || "")}</span></div>
-        <div style="margin-top:8px"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();showTierModels(${p.id})">🔍 Lihat Model</button></div>
       `).join("") || `<p class="muted">Belum ada provider di tier ini.</p>`}
     </div>`; }).join("")}</div></div>`;
 }
@@ -81,7 +81,7 @@ function render() {
     loadAdmin();
     return;
   }
-  app.innerHTML = hero + (ME.suspended ? `<div class="notice" style="margin-bottom:12px"><strong>Akun kamu sedang disuspend oleh admin.</strong> Semua API key kamu dinonaktifkan sementara dan kamu tidak bisa panen kunci baru. Hubungi admin untuk mengaktifkan lagi.</div>` : "") + `<div id="userRoot"><p class="muted">Memuat Halaman Pengguna…</p></div>` + tierShowcase() + bansosSection() + voucherSection();
+  app.innerHTML = hero + `<div id="userRoot"><p class="muted">Memuat Halaman Pengguna…</p></div>` + tierShowcase() + bansosSection() + voucherSection();
   loadUser();
 }
 
@@ -89,14 +89,11 @@ let BANSOS = { keys: [], limit: 2, locked: false, pool: null };
 let bansosTimer = null;
 function fmtID(n) { return Number(n || 0).toLocaleString("id-ID"); }
 function bansosSection() {
-  const bp = TIERS.flatMap((t) => t.providers || []).find((p) => /bansos/i.test(p.brand || ""));
   return `<div class="section" id="bansosSection"><div class="card tier bansos-card">
     <div class="tier-head"><span class="badge bansos">\uD83C\uDF81 BANSOS</span><div class="tier-price"><div class="price">GRATIS</div><div class="price-dur">Untuk Semua Pengguna</div></div></div>
     <div class="brand"><img class="bansos-logo" src="/logos/bansos.jpg" alt="Bansos" />
     <div><h3>Bansos Token 4.5 Juta</h3><p>Token AI gratis untuk semua pengguna, tanpa login. Buat API key kamu sendiri (maksimal 2 key) dan pakai di Base URL HestiaFlow. Kuota 4.5 juta token per hari dipakai bersama \u2014 habis hari ini, besok ngisi lagi.</p></div></div>
     <div><span class="chip">4 model pilihan</span><span class="chip">Tanpa login</span><span class="chip">Maks 2 API key</span></div>
-    ${bp ? `<div style="margin-top:8px"><button class="btn btn-ghost btn-sm" onclick="showTierModels(${bp.id})">🔍 Lihat Model</button></div>` : ""}
-    <div id="bansosSoon" style="display:none;text-align:center;font-weight:800;font-size:22px;letter-spacing:2px;color:#d4af37;border:2px dashed #d4af37;border-radius:12px;padding:10px;margin:10px 0">SEGERA HADIR</div>
     <div class="bansos-pool">
       <div class="bansos-pool-top"><span>Sisa token bansos hari ini</span><span class="bansos-pool-num" id="bansosRemain">Memuat\u2026</span></div>
       <div class="bansos-bar"><div class="bansos-bar-fill" id="bansosBarFill"></div></div>
@@ -129,16 +126,6 @@ function renderBansos() {
     if (BANSOS.locked) { btn.disabled = true; btn.textContent = "\uD83D\uDD12 Sudah 2 API Key"; }
     else { btn.disabled = false; btn.textContent = "Buat API Key"; }
   }
-  // Gembok Bansos (env BANSOS_ENABLED=0): tampilkan papan SEGERA HADIR, sembunyikan key & tombol.
-  const soon = $("#bansosSoon");
-  if (BANSOS.pool && BANSOS.pool.enabled === false) {
-    if (soon) soon.style.display = "block";
-    if (rem) rem.textContent = "Segera Hadir";
-    if (fill) fill.style.width = "0%";
-    if (sub) sub.textContent = "Bansos sedang digembok \u2014 segera hadir kembali.";
-    if (box) box.innerHTML = "";
-    if (btn) { btn.disabled = true; btn.textContent = "\uD83D\uDD12 Segera Hadir"; }
-  } else if (soon) soon.style.display = "none";
 }
 async function loadBansos() {
   if (!$("#bansosSection")) return;
@@ -198,7 +185,29 @@ async function loadUser() {
     <div class="section"><h2>Model</h2>
       <div class="termbox" id="modelBox" style="max-height:160px;overflow-y:auto"><div class="term-line">Memuat model…</div></div>
     </div>
-`;
+    <div class="section"><h2>Curl</h2>
+      <div class="termbox" style="overflow:auto"><pre id="curlExample" style="margin:0;white-space:pre;font-size:13px">curl https://hestiaflow.lovie.me/v1/chat/completions \
+  -H "Authorization: Bearer API_KEY_KAMU" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3-coder:30b",
+    "messages": [{"role": "user", "content": "Halo Saya Hestia Kamu siapa?"}],
+    "stream": false
+  }'</pre></div>
+      <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="copyCurlExample(this)">Salin</button></div>
+    </div>
+    <div class="section"><h2>Curl Gambar</h2>
+      <p class="muted" style="margin:0 0 8px">Khusus pengguna Premium (Stella). Dukung potrait: pakai "size": "1024x1536" dan model gemini-3-pro-image.</p>
+      <div class="termbox" style="overflow:auto"><pre id="curlImageExample" style="margin:0;white-space:pre;font-size:13px">curl https://hestiaflow.lovie.me/v1/images/generations \
+  -H "Authorization: Bearer API_KEY_KAMU" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gemini-3-pro-image",
+    "prompt": "wanita anggun bergaun merah di taman bunga",
+    "size": "1024x1536"
+  }'</pre></div>
+      <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="copyImageCurlExample(this)">Salin</button></div>
+    </div>`;
   renderHarvestSidebar();
   updateModelBox();
   } catch (e) { $("#userRoot").innerHTML = `<p class="muted">Gagal memuat: ${esc(e.message)}</p>`; }
@@ -206,7 +215,14 @@ async function loadUser() {
 function keyBoxAll(keys) {
   return `<div class="keybox" style="margin-bottom:12px"><div class="lbl">API key HestiaFlow</div><div class="key-list-scroll">${keys.map((k) => `<div class="key-row"><span class="key-row-tag">${esc(k.tierSlug || "")} · ${esc(k.providerBrand || "")} · Credit: ${k.credit != null ? esc(k.credit) : "Tidak dinyatakan"}</span><span class="key-row-val">${esc(k.key)}</span><div style="display:flex;gap:6px;margin-top:4px"><button class="btn btn-ghost btn-sm" onclick="copyText('${esc(k.key)}',this)">Salin Key</button><button class="btn btn-ghost btn-sm" style="color:#b91c1c" onclick="deleteMyKey(${k.id},this)">Hapus</button></div></div>`).join("")}</div></div>`;
 }
-
+function copyCurlExample(btn) {
+  const el = document.getElementById("curlExample");
+  if (el) copyText(el.textContent, btn);
+}
+function copyImageCurlExample(btn) {
+  const el = document.getElementById("curlImageExample");
+  if (el) copyText(el.textContent, btn);
+}
 let lastHarvestKeys = [];
 function copyAllHarvestKeys(btn) {
   const liveKeys = (lastHarvestKeys || []).filter((k) => k.live).map((k) => k.key).filter(Boolean);
@@ -271,62 +287,6 @@ function showComingSoon() {
 }
 
 function closeTierLocked() { const m = $("#tierLockModal"); if (m) m.style.display = "none"; }
-async function showTierModels(pid) {
-  let m = $("#modelListModal");
-  if (!m) {
-    m = document.createElement("div"); m.id = "modelListModal"; m.className = "tier-lock-modal";
-    m.innerHTML = `<div class="model-list-box"><div class="model-list-head"><h3 id="mlTitle">Model</h3><button class="btn btn-ghost btn-sm" onclick="closeTierModels()">✕ Tutup</button></div><p class="muted" id="mlSub"></p><div class="model-list-body" id="mlBody"><p class="muted">Memuat…</p></div></div>`;
-    m.addEventListener("click", (e) => { if (e.target === m) closeTierModels(); });
-    document.body.appendChild(m);
-  }
-  const item = TIERS.flatMap((t) => (t.providers || []).map((p) => ({ tier: t, p }))).find((x) => x.p.id === pid);
-  const notes = (item && item.p.modelNotes) || {};
-  $("#mlTitle").textContent = item ? `${item.p.brand} · Tier ${item.tier.name}` : "Daftar Model";
-  $("#mlSub").textContent = "Memuat daftar model…";
-  $("#mlBody").innerHTML = `<p class="muted">Memuat…</p>`;
-  m.style.display = "flex";
-  try {
-    const r = await api("/api/public/providers/" + pid + "/models");
-    const models = r.models || [];
-    $("#mlSub").textContent = `${r.modelCount != null ? r.modelCount : models.length} model tersedia di tier ini`;
-    const FAMLABEL = { "openai": "OpenAI · GPT", "anthropic": "Anthropic · Claude", "google": "Google · Gemini & Gemma", "deepseek": "DeepSeek", "x-ai": "xAI · Grok", "z-ai": "Zhipu · GLM", "qwen": "Qwen", "moonshotai": "Moonshot · Kimi", "meta-llama": "Meta · Llama", "mistralai": "Mistral", "minimax": "MiniMax" };
-    const FAMORDER = Object.keys(FAMLABEL);
-    const famNama = (id) => {
-      const s0 = id.startsWith("cf.") ? id.slice(3) : id;
-      if (s0.startsWith("gpt-") || s0.startsWith("gpt-oss")) return "openai";
-      if (s0.startsWith("claude-")) return "anthropic";
-      if (s0.startsWith("gemini-") || s0.startsWith("gemma-")) return "google";
-      if (s0.startsWith("deepseek-")) return "deepseek";
-      if (s0.startsWith("grok-")) return "x-ai";
-      if (s0.startsWith("glm-")) return "z-ai";
-      if (s0.startsWith("qwen") || s0.startsWith("qwq")) return "qwen";
-      if (s0.startsWith("kimi-")) return "moonshotai";
-      if (s0.startsWith("llama-")) return "meta-llama";
-      if (s0.startsWith("mistral-")) return "mistralai";
-      if (s0.startsWith("minimax-")) return "minimax";
-      return "lainnya";
-    };
-    const grup = new Map();
-    for (const mm of models) {
-      const v = mm.includes("/") ? mm.split("/")[0] : famNama(mm);
-      if (!grup.has(v)) grup.set(v, []);
-      grup.get(v).push(mm);
-    }
-    const urut = [...grup.keys()].sort((a, b) => {
-      const ia = FAMORDER.indexOf(a), ib = FAMORDER.indexOf(b);
-      if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-      return a.localeCompare(b);
-    });
-    const perluGrup = urut.length > 1;
-    $("#mlBody").innerHTML = models.length ? urut.map((v) => {
-      const label = FAMLABEL[v] || (v === "lainnya" ? "Lainnya" : v);
-      const head = perluGrup ? `<div class="model-group-head">${esc(label)} · ${grup.get(v).length}</div>` : "";
-      const rows = [...grup.get(v)].sort().map((mm) => `<div class="model-row"><div class="model-name">${esc(mm)}</div>${notes[mm] ? `<div class="model-note">${esc(notes[mm])}</div>` : ""}</div>`).join("");
-      return head + rows;
-    }).join("") : `<p class="muted">Model belum terdeteksi otomatis.</p>`;
-  } catch { $("#mlSub").textContent = ""; $("#mlBody").innerHTML = `<p class="muted">Gagal memuat model.</p>`; }
-}
-function closeTierModels() { const m = $("#modelListModal"); if (m) m.style.display = "none"; }
 function renderHarvestSidebar() {
   const el = $("#harvestProviderSidebar"); if (!el) return;
   const short = { gratis: "Gratis", plus: "Plus", pro: "Pro", premium: "Prem" };
@@ -335,8 +295,8 @@ function renderHarvestSidebar() {
   if (!items.length) { el.innerHTML = `<p class="muted">Belum ada provider.</p>`; return; }
   const myRank = TIER_RANK[(ME && ME.tier_slug) || "gratis"] ?? 0;
   const selItem = items.find((x) => x.p.id === selectedHarvestProviderId);
-  if (!selectedHarvestProviderId || !selItem || (TIER_RANK[selItem.tier.slug] ?? 0) > myRank) selectedHarvestProviderId = (items.find((x) => (TIER_RANK[x.tier.slug] ?? 0) <= myRank) || items[0]).p.id;
-  el.innerHTML = items.map((x) => { const locked = (TIER_RANK[x.tier.slug] ?? 0) > myRank; const isLocked = locked; const clickFn = `selectHarvestProvider(${x.p.id})`; return `<div class="tier-side-opt${x.p.id === selectedHarvestProviderId ? " sel" : ""}${isLocked ? " locked" : ""}" data-pid="${x.p.id}" onclick="${clickFn}">${isLocked ? "🔒 " : ""}${esc(short[x.tier.slug] || x.tier.name)} • ${x.p.modelCount} Model</div>`; }).join("");
+  if (!selectedHarvestProviderId || !selItem || (TIER_RANK[selItem.tier.slug] ?? 0) > myRank || selItem.tier.slug === "pro") selectedHarvestProviderId = (items.find((x) => (TIER_RANK[x.tier.slug] ?? 0) <= myRank && x.tier.slug !== "pro") || items.find((x) => x.tier.slug !== "pro") || items[0]).p.id;
+  el.innerHTML = items.map((x) => { const locked = (TIER_RANK[x.tier.slug] ?? 0) > myRank || x.tier.slug === "pro"; const comingSoon = x.tier.slug === "plus" || x.tier.slug === "premium"; const isLocked = locked || comingSoon; const clickFn = x.tier.slug === "pro" ? "showTierLocked()" : (comingSoon ? "showComingSoon()" : `selectHarvestProvider(${x.p.id})`); return `<div class="tier-side-opt${x.p.id === selectedHarvestProviderId ? " sel" : ""}${isLocked ? " locked" : ""}" data-pid="${x.p.id}" onclick="${clickFn}">${isLocked ? "🔒 " : ""}${esc(short[x.tier.slug] || x.tier.name)} • ${x.p.modelCount} Model</div>`; }).join("");
   const cur = items.find((x) => x.p.id === selectedHarvestProviderId);
   const lbl = $("#tierPickerLabel"); if (lbl && cur) lbl.textContent = `${short[cur.tier.slug] || cur.tier.name} • ${cur.p.modelCount} Model`;
   updateHarvestLimitUI();
@@ -436,11 +396,10 @@ function renderAdminSections() {
       <div class="grid">${adminCache.users.length ? adminCache.users.map((u) => `
       <div class="card usercard" role="button" tabindex="0" onclick="viewUserKeys(${u.id})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();viewUserKeys(${u.id})}">
         <div style="display:flex;gap:10px;align-items:center">${u.avatar ? `<img src="${esc(u.avatar)}" style="width:40px;height:40px;border-radius:50%" />` : `<div style="width:40px;height:40px;border-radius:50%;background:var(--plum);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800">${esc((u.name || u.email || "?").slice(0, 1).toUpperCase())}</div>`}
-        <div><b>${esc(u.name || "(tanpa nama)")}</b><br /><span class="muted">${esc(u.email)}</span><br /><span class="chip">${u.keyCount} kunci</span>${u.isAdmin ? `<span class="chip">Admin</span>` : ""}${u.suspended ? `<span class="chip" style="background:#7f1d1d;color:#fff">DISUSPEND</span>` : ""}<br /><span class="muted" style="font-size:12px">${u.lastIp ? `IP: ${esc(u.lastIp)}${u.device ? " · " + esc(u.device) : ""}${u.lastLoginAt ? " · login terakhir " + esc(String(u.lastLoginAt).slice(0, 16)) + " UTC" : ""}` : "IP/perangkat belum tercatat — ketahuan pas dia login lagi"}</span></div></div>
+        <div><b>${esc(u.name || "(tanpa nama)")}</b><br /><span class="muted">${esc(u.email)}</span><br /><span class="chip">${u.keyCount} kunci</span>${u.isAdmin ? `<span class="chip">Admin</span>` : ""}</div></div>
         <div style="margin-top:8px" onclick="event.stopPropagation()"><label style="font-size:12px">Paket: </label><select onchange="setUserTier(${u.id}, this.value)" onclick="event.stopPropagation()"><option value="gratis" ${u.tierSlug === "gratis" ? "selected" : ""}>Gratis</option><option value="plus" ${u.tierSlug === "plus" ? "selected" : ""}>Plus</option><option value="pro" ${u.tierSlug === "pro" ? "selected" : ""}>Pro</option><option value="premium" ${u.tierSlug === "premium" ? "selected" : ""}>Premium</option></select></div>
         <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();viewUserKeys(${u.id})">Lihat Kunci</button>
-        ${u.isAdmin ? "" : `<button class="btn btn-ghost btn-sm" style="color:#b45309;border-color:#b45309" onclick="event.stopPropagation();askSuspendUser(${u.id},this,${u.suspended ? 1 : 0})">${u.suspended ? "Aktifkan" : "Suspend"}</button>`}
-        <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();askDeleteUser(${u.id},this)">Hapus Akun</button></div>
+        <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();askDeleteUser(${u.id},'${esc(u.email)}')">Hapus Akun</button></div>
         <div class="hint">Ketuk kartu untuk melihat kunci</div></div>`).join("") : `<p class="muted">Belum ada pengguna terdaftar.</p>`}</div></div>`;
   }
   if (adminSection === "kunci") {
@@ -449,8 +408,7 @@ function renderAdminSections() {
       ${keyFilterUser ? `<div class="banner-filter">Filter: kunci milik <b>${esc(keyFilterUser)}</b> <button class="btn btn-ghost btn-sm" onclick="clearKeyFilter()">Tampilkan semua</button></div>` : ""}
       <div class="grid">${keys.map((k) => `<div class="card"><span class="chip">${esc(k.providerBrand || "")}</span><span class="chip">${esc(k.tierSlug || "")}</span>
         <p class="kv">Pemilik: <b>${esc(k.ownerEmail || "(pool)")}</b> · Prefix: ${esc(k.keyPrefix)} · Credit: ${k.credit != null ? esc(k.credit) : "Tidak dinyatakan"}</p>
-        <div>${(k.models || []).slice(0, 8).map((m) => `<span class="chip model">${esc(m)}</span>`).join("")}${(k.models || []).length > 8 ? `<span class="chip">+${k.models.length - 8} lagi</span>` : ""}</div>
-        <div style="margin-top:8px"><button class="btn btn-danger btn-sm" onclick="askDeleteKeyAdmin(${k.id},this)">Hapus Key</button></div></div>`).join("") || `<p class="muted">Belum ada kunci.</p>`}</div></div>`;
+        <div>${(k.models || []).slice(0, 8).map((m) => `<span class="chip model">${esc(m)}</span>`).join("")}${(k.models || []).length > 8 ? `<span class="chip">+${k.models.length - 8} lagi</span>` : ""}</div></div>`).join("") || `<p class="muted">Belum ada kunci.</p>`}</div></div>`;
   }
   if (adminSection === "provider") {
     html = `<div id="sec-provider"><h3>Provider & Tier</h3>
@@ -498,8 +456,8 @@ function renderAdminSections() {
   }
   if (adminSection === "voucher") {
     const vs = adminCache.vouchers || [];
-    html = `<div id="sec-voucher"><h3>06 · Voucher</h3><p class="muted">Buat kode vocher (16 karakter, 1x pakai) untuk upgrade paket user. Plus = 3 hari, Pro = 7 hari, Premium = 14 hari, Media = 7 hari (saat ditukar, user menerima API key Media untuk generate gambar & video).</p>
-      <div class="row" style="gap:8px"><select id="newVoucherTier"><option value="plus">Plus (3 hari)</option><option value="pro">Pro (7 hari)</option><option value="premium">Premium (14 hari)</option><option value="media">Media (7 hari)</option></select><button class="btn btn-plum" onclick="createVoucher()">Buat Vocher</button></div>
+    html = `<div id="sec-voucher"><h3>06 · Voucher</h3><p class="muted">Buat kode vocher (16 karakter, 1x pakai) untuk upgrade paket user. Plus = 3 hari, Pro = 7 hari, Premium = 14 hari.</p>
+      <div class="row" style="gap:8px"><select id="newVoucherTier"><option value="plus">Plus (3 hari)</option><option value="pro">Pro (7 hari)</option><option value="premium">Premium (14 hari)</option></select><button class="btn btn-plum" onclick="createVoucher()">Buat Vocher</button></div>
       <p id="newVoucherMsg" class="muted"></p>
       <div class="grid" style="margin-top:12px">${vs.length ? vs.map((v) => `<div class="card"><b>${esc(v.code)}</b><br /><span class="chip">${esc(v.tierSlug)}</span> <span class="chip">${v.durationDays} hari</span> ${v.used ? `<span class="chip">Dipakai oleh ${esc(v.usedBy || "?")}</span>` : `<span class="chip">Belum dipakai</span>`}<br /><button class="btn btn-ghost btn-sm" onclick="copyVoucher('${esc(v.code)}')">Salin Kode</button> <button class="btn btn-danger btn-sm" onclick="deleteVoucher(${v.id})">Hapus</button></div>`).join("") : `<p class="muted">Belum ada vocher.</p>`}</div></div>`;
   }
@@ -518,40 +476,14 @@ function viewUserKeys(id) {
 }
 function clearKeyFilter() { keyFilterUser = null; renderAdminSections(); }
 async function setUserTier(id, slug) { try { await api(`/api/admin/users/${id}/tier`, { method: "POST", body: JSON.stringify({ tierSlug: slug }) }); } catch (e) { alert("Gagal set paket: " + e.message); } }
-// Hapus pengguna: pola dua-ketuk yang sama kayak tombol hapus lain di app ini
-// (ketuk 1 = tombol bersenjata "Yakin Hapus?" selama 3 detik, ketuk 2 = eksekusi).
-// Pola lama (dialog confirm() + klik tombol sekali lagi) mati di browser HP /
-// WebView — dialog-nya gampang ke-suppress dan penghapusan tidak pernah jalan.
-function askDeleteUser(id, btn) {
-  if (!btn) return;
-  if (btn.dataset.armed === "1") {
-    btn.disabled = true; btn.textContent = "Menghapus…";
-    api(`/api/admin/users/${id}`, { method: "DELETE" }).then(() => loadAdmin()).catch((e) => { alert("Gagal hapus: " + e.message); btn.disabled = false; btn.textContent = "Hapus Akun"; btn.dataset.armed = ""; });
-    return;
+function askDeleteUser(id, email) {
+  if (deletePending === id) {
+    deletePending = null;
+    api(`/api/admin/users/${id}`, { method: "DELETE" }).then(() => loadAdmin()).catch((e) => alert("Gagal: " + e.message));
+  } else {
+    deletePending = id;
+    if (!confirm(`Hapus akun ${email}? Klik Hapus Akun sekali lagi untuk konfirmasi.`)) deletePending = null;
   }
-  btn.dataset.armed = "1"; btn.textContent = "Yakin Hapus?";
-  setTimeout(() => { if (btn.dataset) { btn.dataset.armed = ""; btn.textContent = "Hapus Akun"; } }, 3000);
-}
-function askSuspendUser(id, btn, currently) {
-  if (!btn) return;
-  const label = currently ? "Aktifkan" : "Suspend";
-  if (btn.dataset.armed === "1") {
-    btn.disabled = true; btn.textContent = "Memproses…";
-    api(`/api/admin/users/${id}/suspend`, { method: "POST", body: JSON.stringify({ suspended: currently ? false : true }) }).then(() => loadAdmin()).catch((e) => { alert("Gagal: " + e.message); btn.disabled = false; btn.textContent = label; btn.dataset.armed = ""; });
-    return;
-  }
-  btn.dataset.armed = "1"; btn.textContent = currently ? "Yakin Aktifkan?" : "Yakin Suspend?";
-  setTimeout(() => { if (btn.dataset) { btn.dataset.armed = ""; btn.textContent = label; } }, 3000);
-}
-function askDeleteKeyAdmin(id, btn) {
-  if (!btn) return;
-  if (btn.dataset.armed === "1") {
-    btn.disabled = true; btn.textContent = "Menghapus…";
-    api(`/api/admin/keys/${id}`, { method: "DELETE" }).then(() => loadAdmin()).catch((e) => { alert("Gagal hapus key: " + e.message); btn.disabled = false; btn.textContent = "Hapus Key"; btn.dataset.armed = ""; });
-    return;
-  }
-  btn.dataset.armed = "1"; btn.textContent = "Yakin Hapus?";
-  setTimeout(() => { if (btn.dataset) { btn.dataset.armed = ""; btn.textContent = "Hapus Key"; } }, 3000);
 }
 async function addTier() {
   const name = $("#newTierName").value.trim(); if (!name) return alert("Nama tier wajib diisi");
@@ -587,110 +519,4 @@ async function saveSettings() {
   alert("Pengaturan disimpan.");
   load();
 }
-// ---- Bubble info API (perintah Hestia 2026-10-23): tombol bulat di tepi layar ->
-// panel contoh cURL + hasil JSON. Nempel di body agar tidak ikut ter-render ulang. ----
-function apiSampleTexts() {
-  const B = location.origin + "/v1";
-  return {
-    chat: "curl " + B + "/chat/completions \\\n  -H \"Authorization: Bearer hgw-KEY-KAMU\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"auto\",\"messages\":[{\"role\":\"user\",\"content\":\"Halo!\"}]}'",
-    gambar: "curl " + B + "/images/generations \\\n  -H \"Authorization: Bearer hgw-KEY-MEDIA-KAMU\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"flux-schnell\",\"prompt\":\"kucing oranye di taman bunga\"}'",
-    video: "curl " + B + "/videos/generations \\\n  -H \"Authorization: Bearer hgw-KEY-MEDIA-KAMU\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"seedance-1.5-pro\",\"prompt\":\"layangan di atas sawah hijau\",\"duration\":5}'",
-    paramGambar: "curl " + B + "/images/generations \\\n  -H \"Authorization: Bearer hgw-KEY-MEDIA-KAMU\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"flux-schnell\",\"prompt\":\"kucing oranye di taman bunga\",\"size\":\"1024x1536\",\"seed\":42,\"negative_prompt\":\"buram, teks, watermark\"}'",
-    paramVideo: "curl " + B + "/videos/generations \\\n  -H \"Authorization: Bearer hgw-KEY-MEDIA-KAMU\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"seedance-1.5-pro\",\"prompt\":\"layangan di atas sawah hijau\",\"duration\":5,\"num_frames\":120,\"fps\":24,\"seed\":7,\"negative_prompt\":\"goyang, buram\"}'",
-    jsonChat: "{\n  \"id\": \"chatcmpl-...\",\n  \"object\": \"chat.completion\",\n  \"model\": \"auto\",\n  \"choices\": [{\n    \"message\": { \"role\": \"assistant\", \"content\": \"Halo! Ada yang bisa saya bantu?\" },\n    \"finish_reason\": \"stop\"\n  }],\n  \"usage\": { \"prompt_tokens\": 12, \"completion_tokens\": 9, \"total_tokens\": 21 }\n}",
-    jsonMedia: "{\n  \"created\": 1792696805,\n  \"data\": [{ \"url\": \"https://.../hasil-generate.jpg\" }]\n}"
-  };
-}
-function mountApiBubble() {
-  if (document.getElementById("apiBubbleBtn")) return;
-  if (!document.body) return;
-  const S = apiSampleTexts();
-  const wrap = document.createElement("div");
-  wrap.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:9999;display:flex;flex-direction:column;align-items:flex-end;gap:10px";
-  const block = (label, key) => `<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><b style="font-size:13px;color:#d4af37">${label}</b><button class="btn btn-ghost btn-sm" data-copy="${key}">Salin</button></div><pre style="margin:0;background:#0d0b08;border:1px solid #3a3226;border-radius:10px;padding:10px;font-size:11px;line-height:1.5;overflow-x:auto;white-space:pre;color:#f3ead2">${esc(S[key])}</pre></div>`;
-  wrap.innerHTML = `
-  <div id="apiPanel" style="display:none;width:min(92vw,400px);max-height:72vh;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;background:#17140f;border:1px solid #d4af37;border-radius:16px;padding:14px;color:#f3ead2;box-shadow:0 18px 50px rgba(0,0,0,.55)">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">Contoh Pakai API</b><button id="apiPanelClose" class="btn btn-ghost btn-sm" style="color:#f3ead2">✕</button></div>
-    ${block("cURL — Chat", "chat")}
-    ${block("cURL — Buat Gambar (tier Media)", "gambar")}
-    ${block("cURL — Buat Video (tier Media)", "video")}
-    ${block("cURL — Parameter Lengkap (Gambar)", "paramGambar")}
-    ${block("cURL — Parameter Lengkap (Video)", "paramVideo")}
-    ${block("Hasil JSON — Chat", "jsonChat")}
-    ${block("Hasil JSON — Gambar/Video", "jsonMedia")}
-    <p class="muted" style="margin:0;font-size:12px">Ganti hgw-KEY-KAMU dengan API key milikmu. Chat mendukung streaming (tambah "stream": true).<br /><br /><b>Parameter media:</b> "size" = ukuran/rasio hasil (mis. 1024x1024, 1024x1536, 720p) • "seed" = angka kunci agar hasil bisa diulang persis • "num_frames"/"frames" = jumlah frame video • "fps" = frame per detik • "negative_prompt" = yang harus dihindari model (mis. buram, teks, watermark). Dukungan tiap parameter tergantung modelnya.</p>
-  </div>
-  <div id="creditPanel" style="display:none;width:min(92vw,340px);max-height:72vh;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;background:#17140f;border:1px solid #d4af37;border-radius:16px;padding:14px;color:#f3ead2;box-shadow:0 18px 50px rgba(0,0,0,.55)">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:15px">Credit / Token Saya</b><button id="creditPanelClose" class="btn btn-ghost btn-sm" style="color:#f3ead2">✕</button></div>
-    <div id="creditBody"><p class="muted" style="margin:0;font-size:13px">Memuat credit kamu…</p></div>
-  </div>
-  <button id="creditBubbleBtn" title="Credit / Token Saya" style="width:56px;height:56px;border-radius:50%;border:2px solid #f3ead2;background:linear-gradient(135deg,#d4af37,#b8860b);color:#17140f;font-size:23px;cursor:pointer;box-shadow:0 10px 26px rgba(0,0,0,.5)">🪙</button>
-  <button id="apiBubbleBtn" title="Contoh cURL & JSON" style="width:56px;height:56px;border-radius:50%;border:2px solid #f3ead2;background:linear-gradient(135deg,#d4af37,#b8860b);color:#17140f;font-size:19px;font-weight:800;cursor:pointer;box-shadow:0 10px 26px rgba(0,0,0,.5)">&lt;/&gt;</button>`;
-  document.body.appendChild(wrap);
-  const panel = wrap.querySelector("#apiPanel");
-  const creditPanel = wrap.querySelector("#creditPanel");
-  // Lapisan penutup full-layar: menangkep semua sentuhan di luar panel agar layar
-  // di baliknya tidak ikut ketekan/kegeser (laporan Hestia 2026-10-23); tap di sini menutup panel.
-  const backdrop = document.createElement("div");
-  backdrop.id = "apiBackdrop";
-  backdrop.style.cssText = "display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9998;touch-action:none;overscroll-behavior:none";
-  document.body.appendChild(backdrop);
-  const applyChrome = () => {
-    const open = panel.style.display !== "none" || creditPanel.style.display !== "none";
-    backdrop.style.display = open ? "block" : "none";
-    // Kunci scroll di html + body: sebagian browser HP mengabaikan kunci di body saja.
-    document.body.style.overflow = open ? "hidden" : "";
-    document.documentElement.style.overflow = open ? "hidden" : "";
-  };
-  const setApiPanel = (open) => {
-    panel.style.display = open ? "block" : "none";
-    if (open) creditPanel.style.display = "none";
-    applyChrome();
-  };
-  // ---- Panel Credit / Token (perintah Hestia 2026-10-23 malam): tombol bubble bulat
-  // di atas tombol cURL -> panel jumlah credit pengguna per tier (dari /api/my-keys). ----
-  const fmtCredit = (n) => Number(n || 0).toLocaleString("id-ID");
-  const loadCreditPanel = async () => {
-    const body = wrap.querySelector("#creditBody");
-    body.innerHTML = `<p class="muted" style="margin:0;font-size:13px">Memuat credit kamu…</p>`;
-    let keys = null;
-    try { const j = await api("/api/my-keys"); keys = j.keys || []; } catch {}
-    if (!keys) { body.innerHTML = `<p style="margin:0;font-size:13px">Masuk dulu pakai akun Google buat lihat credit kamu.</p>`; return; }
-    // Satuan asli tiap tier (dari catatan provider kita sendiri; perintah Hestia
-    // 2026-10-23: "yang pake credit buat Credit, yang pake token buat Token"):
-    // Plus/Aurora = credit dolar (tersimpan sbg mikro-dolar: 200.000 = $0.20/akun);
-    // Pro/Nova = token (283.000/akun); Premium/Stella = token (30.000/hari per akun);
-    // Gratis = key aktif + panggilan/hari; Media = tanpa kuota.
-    const UNITS = { gratis: "keys", plus: "usd", pro: "token", premium: "token", media: "noquota" };
-    const tiers = [["gratis", "Gratis"], ["plus", "Plus"], ["pro", "Pro"], ["premium", "Premium"], ["media", "Media"]];
-    let totalToken = 0, totalUsd = 0, rows = "";
-    for (const [slug, label] of tiers) {
-      const ks = keys.filter((k) => k.tierSlug === slug);
-      const unit = UNITS[slug];
-      let val;
-      if (!ks.length) val = `<span class="muted">Belum ada</span>`;
-      else if (unit === "noquota") val = `Tanpa kuota <span class="muted">(${ks.length} key)</span>`;
-      else if (unit === "keys") val = `${ks.length} key aktif <span class="muted">(100 panggilan/hari)</span>`;
-      else if (unit === "token") { const sum = ks.reduce((a, k) => a + (k.credit || 0), 0); totalToken += sum; val = `${fmtCredit(sum)} token <span class="muted">(${ks.length} key)</span>`; }
-      else { const sum = ks.reduce((a, k) => a + (k.credit || 0), 0); totalUsd += sum / 1000000; val = `$${(sum / 1000000).toFixed(2)} <span class="muted">(${ks.length} key)</span>`; }
-      rows += `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(212,175,55,.18)"><b style="font-size:13px;color:#d4af37">Tier ${label}</b><span style="font-size:13px;font-weight:700">${val}</span></div>`;
-    }
-    const summary = `<div style="background:#0d0b08;border:1px solid #3a3226;border-radius:10px;padding:10px 12px;margin-bottom:6px;font-size:14px;line-height:1.9"><div style="display:flex;justify-content:space-between"><span class="muted">Token</span><b>${fmtCredit(totalToken)}</b></div><div style="display:flex;justify-content:space-between"><span class="muted">Credit</span><b style="color:#d4af37">$${totalUsd.toFixed(2)}</b></div></div>`;
-    body.innerHTML = summary + rows + `<p class="muted" style="margin:10px 0 0;font-size:12px">Token & credit dihitung dari akun yang masih hidup di tiap key. Angka dimuat ulang tiap panel dibuka.</p>`;
-  };
-  const setCreditPanel = (open) => {
-    creditPanel.style.display = open ? "block" : "none";
-    if (open) { panel.style.display = "none"; loadCreditPanel(); }
-    applyChrome();
-  };
-  backdrop.addEventListener("click", () => { setApiPanel(false); setCreditPanel(false); });
-  wrap.querySelector("#apiBubbleBtn").addEventListener("click", () => setApiPanel(panel.style.display === "none"));
-  wrap.querySelector("#apiPanelClose").addEventListener("click", () => setApiPanel(false));
-  wrap.querySelector("#creditBubbleBtn").addEventListener("click", () => setCreditPanel(creditPanel.style.display === "none"));
-  wrap.querySelector("#creditPanelClose").addEventListener("click", () => setCreditPanel(false));
-  wrap.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", () => copyText(S[b.getAttribute("data-copy")], b)));
-}
-const _renderApiBubble = render;
-render = function () { _renderApiBubble(); mountApiBubble(); };
-if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mountApiBubble); else mountApiBubble();
 load();
