@@ -333,9 +333,9 @@ let _proxy429Set = new Set();
 async function fetchProxyHidup(siteBase) {
   if (_proxyOkCache.site === siteBase && Date.now() - _proxyOkCache.at < 300000) return _proxyOkCache.list;
   const semua = await fetchProxyList();
-  const kandidat = [...semua].sort(() => Math.random() - 0.5).slice(0, 40);
+  const kandidat = [...semua].sort(() => Math.random() - 0.5).slice(0, 60);
   const hidup = [];
-  for (let i = 0; i < kandidat.length && hidup.length < 6; i += 10) {
+  for (let i = 0; i < kandidat.length && hidup.length < 10; i += 10) {
     const batch = kandidat.slice(i, i + 10);
     const hasil = await Promise.all(batch.map(async (x) => {
       try {
@@ -351,6 +351,18 @@ async function fetchProxyHidup(siteBase) {
   _proxyOkCache = { site: siteBase, list: hidup, at: Date.now() };
   _proxy429Set = new Set();
   return hidup;
+}
+
+// Cek ulang satu proxy sesaat sebelum dipakai signup (probe yang sama seperti
+// fetchProxyHidup, timeout 7 detik): proxy yang hidup saat probe bisa mati di
+// tengah jalan; yang mati dilewati tanpa membuang jatah coba akun.
+async function cekProxyHidup(siteBase, proxy) {
+  try {
+    const d = proxyDispatcher(proxy);
+    if (!d) return false;
+    const r = await fetch(siteBase + "/", { headers: { "User-Agent": randUA() }, dispatcher: d, signal: AbortSignal.timeout(7000) });
+    return r.status > 0;
+  } catch { return false; }
 }
 
 // Luna-specific auto-register (provider brand "Luna").
@@ -728,23 +740,30 @@ async function tryAutoRegisterNearresearch(provider) {
     return { res, jj };
   };
   try {
-    // Coba lewat proxy yang SUDAH DISARING HIDUP dulu (maks 3, seperti Luna dan
-    // script Python); direct hanya bila proxy habis/gagal.
+    // Coba lewat proxy yang SUDAH DISARING HIDUP dulu (maks 4, sedang — bukan
+    // 5, supaya panen tidak melar); direct hanya bila proxy habis/gagal.
+    // Tiap proxy dicek ulang sesaat sebelum signup: yang mati di tengah jalan
+    // dilewati TANPA membuang jatah coba (penyakit yang terbukti di log).
     const proxies = await fetchProxyHidup(siteBase);
     let r = null, j = null, winProxy = null;
-    const maxProxyTries = 3;
-    for (let pi = 0; pi < maxProxyTries; pi++) {
-      const eligible = proxies.filter((x) => !_proxy429Set.has(x));
+    const maxProxyTries = 4;
+    let tries = 0;
+    const sudahCoba = new Set();
+    while (tries < maxProxyTries) {
+      const eligible = proxies.filter((x) => !_proxy429Set.has(x) && !sudahCoba.has(x));
       if (!eligible.length) break;
       const p = eligible[Math.floor(Math.random() * eligible.length)];
+      sudahCoba.add(p);
+      if (!(await cekProxyHidup(siteBase, p))) { console.log("[nearresearch] signup skip proxy mati (cek ulang)"); continue; }
+      tries++;
       try {
         const attempt = await doSignup(p);
         r = attempt.res; j = attempt.jj;
-        console.log(`[nearresearch] signup status=${r.status} ok=${r.ok} hasKey=${!!(j && j.key)} via=proxy${pi + 1}`);
+        console.log(`[nearresearch] signup status=${r.status} ok=${r.ok} hasKey=${!!(j && j.key)} via=proxy${tries}`);
         if (r.ok) { winProxy = p; break; }
         if (r.status === 429) _proxy429Set.add(p);
         if (r.status !== 403 && r.status !== 429) break;
-      } catch (e) { console.log(`[nearresearch] signup via=proxy${pi + 1} exception ${e && e.message ? e.message : "unknown"}`); }
+      } catch (e) { console.log(`[nearresearch] signup via=proxy${tries} exception ${e && e.message ? e.message : "unknown"}`); }
     }
     if (!r || !r.ok) {
       const attempt = await doSignup(null);
