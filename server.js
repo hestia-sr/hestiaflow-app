@@ -1275,7 +1275,9 @@ function gatewayAuth(req) {
     try {
       const t = db.prepare("SELECT slug FROM tiers WHERE id=?").get(key.tier_id);
       if (t && t.slug === "pro") key._pro_locked = true;
-      if (t && (t.slug === "plus" || t.slug === "premium")) key._coming_soon = true;
+      // Premium DIBUKA untuk chat (2026-10-26, perintah Hestia "buka aja"): key Stella boleh dipakai.
+      // Plus masih "Segera Hadir".
+      if (t && t.slug === "plus") key._coming_soon = true;
     } catch {}
   }
   // Cek masa Gratis TOTAL (2 hari dari panen pertama) — 2026-10-18. Abis 2 hari, key mati total.
