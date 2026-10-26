@@ -810,14 +810,9 @@ async function doHarvest({ userId, providerId, count }) {
   if (!provider) throw new Error("provider_not_found");
   if (!Number.isInteger(count) || count < 1 || count > 5000) throw new Error("count_must_be_1_to_5000");
   const tier = db.prepare("SELECT * FROM tiers WHERE id=?").get(provider.tier_id);
-  // Tangga panen (aturan Hestia 2026-10-26): Plus → Plus+Gratis · Pro → Plus+Gratis ·
-  // Premium → Pro+Plus+Gratis. Tier Premium sendiri masih "Segera Hadir" untuk semua.
-  // Plus diatur cek peringkat di bawah (peringkat >= plus lolos).
-  if (tier && tier.slug === "premium") throw new Error("Segera Hadir!");
-  if (tier && tier.slug === "pro" && userId != null) {
-    const pu = db.prepare("SELECT COALESCE(tier_slug,'gratis') AS tier_slug,tier_expires_at FROM users WHERE id=?").get(userId);
-    if (effectiveTierSlug(pu) !== "premium") throw new Error("Kamu tidak Bisa Memilih Menu ini Segera Upgrade Paket kamu");
-  }
+  // Tangga panen (aturan Hestia 2026-10-26): tiap paket panen tier-nya SENDIRI + semua tier di bawahnya
+  // (Plus: Plus+Gratis · Pro: Pro+Plus+Gratis · Premium: Premium+Pro+Plus+Gratis).
+  // Penegakannya = cek peringkat di bawah ini; tidak ada kunci khusus per tier lagi.
   // Paket efektif si pemanen (buat gerbang jam gratis di bawah).
   let harvesterTier = "gratis";
   if (userId != null) {
