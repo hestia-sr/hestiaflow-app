@@ -327,6 +327,9 @@ function proxyDispatcher(proxyHostPort) {
 // dengan timeout pendek, yang gagal dibuang. Di-cache 5 menit seperti scrap
 // agar satu panen multi-akun tidak mengulang probe tiap akun.
 let _proxyOkCache = { site: "", list: [], at: 0 };
+// Host proxy yang sudah kena 429 (batas signup per jaringan) dalam jendela
+// cache ini — jangan diundi lagi, seperti penanda rute habis di script Python.
+let _proxy429Set = new Set();
 async function fetchProxyHidup(siteBase) {
   if (_proxyOkCache.site === siteBase && Date.now() - _proxyOkCache.at < 300000) return _proxyOkCache.list;
   const semua = await fetchProxyList();
@@ -346,6 +349,7 @@ async function fetchProxyHidup(siteBase) {
   }
   console.log(`[nearresearch] proxy hidup: ${hidup.length} dari ${kandidat.length} kandidat`);
   _proxyOkCache = { site: siteBase, list: hidup, at: Date.now() };
+  _proxy429Set = new Set();
   return hidup;
 }
 
@@ -728,14 +732,17 @@ async function tryAutoRegisterNearresearch(provider) {
     // script Python); direct hanya bila proxy habis/gagal.
     const proxies = await fetchProxyHidup(siteBase);
     let r = null, j = null, winProxy = null;
-    const maxProxyTries = Math.min(3, proxies.length);
+    const maxProxyTries = 3;
     for (let pi = 0; pi < maxProxyTries; pi++) {
-      const p = proxies[Math.floor(Math.random() * proxies.length)];
+      const eligible = proxies.filter((x) => !_proxy429Set.has(x));
+      if (!eligible.length) break;
+      const p = eligible[Math.floor(Math.random() * eligible.length)];
       try {
         const attempt = await doSignup(p);
         r = attempt.res; j = attempt.jj;
         console.log(`[nearresearch] signup status=${r.status} ok=${r.ok} hasKey=${!!(j && j.key)} via=proxy${pi + 1}`);
         if (r.ok) { winProxy = p; break; }
+        if (r.status === 429) _proxy429Set.add(p);
         if (r.status !== 403 && r.status !== 429) break;
       } catch (e) { console.log(`[nearresearch] signup via=proxy${pi + 1} exception ${e && e.message ? e.message : "unknown"}`); }
     }
@@ -756,8 +763,8 @@ async function tryAutoRegisterNearresearch(provider) {
         return o;
       };
       let vr = null;
-      if (winProxy) { try { vr = await fetch(apiBase + "/models", mkVerify(winProxy)); } catch {} }
-      if (!vr || !vr.ok) { try { vr = await fetch(apiBase + "/models", mkVerify(null)); } catch {} }
+      if (winProxy) { try { vr = await fetch(apiBase + "/models", mkVerify(winProxy)); console.log(`[nearresearch] verify via=proxyPemenang status=${vr.status} ok=${vr.ok}`); } catch (e) { console.log(`[nearresearch] verify via=proxyPemenang exception ${e && e.message ? e.message : "unknown"}`); } }
+      if (!vr || !vr.ok) { try { vr = await fetch(apiBase + "/models", mkVerify(null)); console.log(`[nearresearch] verify via=direct status=${vr.status} ok=${vr.ok}`); } catch (e) { console.log(`[nearresearch] verify via=direct exception ${e && e.message ? e.message : "unknown"}`); } }
       verified = !!(vr && vr.ok);
     } catch {}
     console.log(`[nearresearch] auto-register ok, verified=${verified}, balance=${j.balance}`);
