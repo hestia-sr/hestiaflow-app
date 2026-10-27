@@ -1593,10 +1593,22 @@ const IMAGE_MODEL_MAP = {
   "gemini-3-pro-image": "google/gemini-3-pro-image",
   "gpt-5-image": "openai/gpt-5-image",
   "gpt-5-image-mini": "openai/gpt-5-image-mini",
+  "gemini-nano-banana-2.1": "google/gemini-nano-banana-2.1",
+  "gemini-3.1-flash-lite-image": "google/gemini-3.1-flash-lite-image",
+  "gemini-3.1-flash-image": "google/gemini-3.1-flash-image",
+  "gemini-3.1-flash-image-preview": "google/gemini-3.1-flash-image-preview",
+  "gemini-3-pro-image-preview": "google/gemini-3-pro-image-preview",
+  "gpt-5.4-image-2": "openai/gpt-5.4-image-2",
   "google/gemini-2.5-flash-image": "google/gemini-2.5-flash-image",
   "google/gemini-3-pro-image": "google/gemini-3-pro-image",
   "openai/gpt-5-image": "openai/gpt-5-image",
   "openai/gpt-5-image-mini": "openai/gpt-5-image-mini",
+  "google/gemini-nano-banana-2.1": "google/gemini-nano-banana-2.1",
+  "google/gemini-3.1-flash-lite-image": "google/gemini-3.1-flash-lite-image",
+  "google/gemini-3.1-flash-image": "google/gemini-3.1-flash-image",
+  "google/gemini-3.1-flash-image-preview": "google/gemini-3.1-flash-image-preview",
+  "google/gemini-3-pro-image-preview": "google/gemini-3-pro-image-preview",
+  "openai/gpt-5.4-image-2": "openai/gpt-5.4-image-2",
 };
 app.post("/v1/images/generations", async (req, res) => {
   const key = gatewayAuth(req);
@@ -1611,7 +1623,7 @@ app.post("/v1/images/generations", async (req, res) => {
   if (!prompt) return res.status(400).json({ error: { message: "prompt is required.", type: "invalid_request_error", param: "prompt", code: "invalid_request" } });
   const modelIn = body.model || "gemini-3-pro-image";
   const realModel = IMAGE_MODEL_MAP[modelIn];
-  if (!realModel) return res.status(404).json({ error: { message: "Model gambar '" + modelIn + "' tidak tersedia. Pilihan: gemini-3-pro-image, gemini-2.5-flash-image, gpt-5-image, gpt-5-image-mini.", type: "invalid_request_error", param: "model", code: "model_not_found" } });
+  if (!realModel) return res.status(404).json({ error: { message: "Model gambar '" + modelIn + "' tidak tersedia. Pilihan: gemini-3-pro-image, gemini-2.5-flash-image, gpt-5-image, gpt-5-image-mini, gemini-nano-banana-2.1, gemini-3.1-flash-lite-image, gemini-3.1-flash-image, gemini-3.1-flash-image-preview, gemini-3-pro-image-preview, gpt-5.4-image-2.", type: "invalid_request_error", param: "model", code: "model_not_found" } });
   let n = parseInt(body.n, 10);
   if (!Number.isFinite(n) || n < 1) n = 1;
   if (n > 4) n = 4;
