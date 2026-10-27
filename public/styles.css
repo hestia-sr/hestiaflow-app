@@ -178,3 +178,13 @@ body:not(.loaded) footer{display:none}
 .bansos-bar-fill::after{content:"";position:absolute;top:0;bottom:0;left:0;width:45%;background:linear-gradient(100deg,rgba(255,255,255,0) 0%,rgba(255,241,190,.95) 50%,rgba(255,255,255,0) 100%);transform:translateX(-160%) skewX(-12deg);animation:bansosShine 2.8s ease-in-out infinite}
 @keyframes bansosShine{0%{transform:translateX(-160%) skewX(-12deg)}45%,100%{transform:translateX(320%) skewX(-12deg)}}
 @media (prefers-reduced-motion:reduce){.bansos-bar-fill::before,.bansos-bar-fill::after{animation:none}}
+
+/* Susulan monokrom 2026-10-28: warna yang berasal dari luar CSS (emoji +
+   inline style JS) — tidak mengubah tata letak, hanya menghilangkan warna. */
+.card-lock-overlay{filter:grayscale(1)}
+#bansosLockOverlay span{filter:grayscale(1) drop-shadow(0 10px 24px rgba(15,23,42,.3)) !important}
+#bansosCreateBtn{filter:grayscale(1)}
+.bansos-pool{filter:grayscale(1)}
+div[style*="c9a227"]{background:linear-gradient(90deg,#1e293b,#475569) !important}
+button[style*="d4af37"]{color:#1e293b !important;border-color:#1e293b !important}
+button[style*="b91c1c"]{color:#1e293b !important}
