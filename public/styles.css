@@ -128,6 +128,9 @@ footer img{width:30px;height:30px;border-radius:50%;object-fit:cover;border:1.5p
 .card.locked-card {
   opacity: 0.85;
 }
+/* Perbaikan 2026-10-28: harga di kartu terkunci digeser kiri 48px supaya
+   tidak tertutup ikon gembok 40px di pojok kanan atas kartu. */
+.card.locked-card .tier-price{padding-right:48px}
 .card-lock-overlay {
   position: absolute;
   top: 10px;
