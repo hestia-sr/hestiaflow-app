@@ -189,3 +189,6 @@ button[style*="d4af37"]{color:#1e293b !important;border-color:#1e293b !important
 button[style*="b91c1c"]{color:#1e293b !important}
 
 #bansosLockOverlay{background:rgba(224,229,236,.5) !important}
+
+.badge.bansos{filter:grayscale(1)}
+.bansos-logo{filter:grayscale(1)}
