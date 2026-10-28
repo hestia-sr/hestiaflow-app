@@ -1633,10 +1633,13 @@ app.post("/v1/images/generations", async (req, res) => {
   if (sz.includes("1536x1024") || sz === "landscape" || sz === "16:9" || sz === "horizontal") orient = " Horizontal landscape orientation, wide 16:9 aspect ratio.";
   else if (sz.includes("1024x1536") || sz === "portrait" || sz === "9:16" || sz === "vertical" || sz === "full portrait") orient = " Vertical portrait orientation, tall 9:16 aspect ratio, full body visible from head to toe.";
   const fullPrompt = "Generate an image: " + prompt + orient;
-  // Kandidat upstream (sama seperti chat): akun panen terbaru -> provider -> worker aktif.
+  // Kandidat upstream (sama seperti chat): SEMUA akun panen di belakang key, coba satu-satu (failover).
+  // Provider dan worker tetap sebagai cadangan setelah semua akun panen dicoba.
   let candidates = [];
-  const ha = db.prepare("SELECT upstream_api_key, upstream_base_url FROM harvested_accounts WHERE api_key_id=? AND upstream_api_key IS NOT NULL ORDER BY id DESC LIMIT 1").get(key.id);
-  if (ha) candidates.push({ key: ha.upstream_api_key, url: ha.upstream_base_url || provider.upstream_url });
+  const has = db.prepare("SELECT upstream_api_key, upstream_base_url FROM harvested_accounts WHERE api_key_id=? AND upstream_api_key IS NOT NULL ORDER BY id ASC").all(key.id);
+  for (const h of has) {
+    candidates.push({ key: h.upstream_api_key, url: h.upstream_base_url || provider.upstream_url });
+  }
   if (provider.upstream_url || provider.upstream_api_key) candidates.push({ key: provider.upstream_api_key, url: provider.upstream_url });
   const wk = db.prepare("SELECT * FROM workers WHERE provider_id=? AND status='active' AND upstream_api_key IS NOT NULL ORDER BY id LIMIT 1").get(provider.id);
   if (wk) candidates.push({ key: wk.upstream_api_key, url: provider.upstream_url });
