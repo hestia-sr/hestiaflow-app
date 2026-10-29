@@ -1258,7 +1258,7 @@ async function doHarvest({ userId, providerId, count }) {
   if (!Number.isInteger(count) || count < 1 || count > 5000) throw new Error("count_must_be_1_to_5000");
   const tier = db.prepare("SELECT * FROM tiers WHERE id=?").get(provider.tier_id);
   // KUNCI TOTAL (2026-10-29, perintah Hestia): Plus, Pro, Premium Segera Hadir — panen ditolak untuk semua, termasuk admin.
-  if (tier && ["plus", "pro", "premium", "media2"].includes(tier.slug)) throw new Error("Tier " + (tier.name || tier.slug) + " sedang dikunci (Segera Hadir).");
+  if (tier && ["pro", "premium", "media2"].includes(tier.slug)) throw new Error("Tier " + (tier.name || tier.slug) + " sedang dikunci (Segera Hadir).");
   // Tangga panen (aturan Hestia 2026-10-26): tiap paket panen tier-nya SENDIRI + semua tier di bawahnya
   // (Plus: Plus+Gratis · Pro: Pro+Plus+Gratis · Premium: Premium+Pro+Plus+Gratis).
   // Penegakannya = cek peringkat di bawah ini; tidak ada kunci khusus per tier lagi.
@@ -1418,7 +1418,7 @@ app.get("/api/public/providers/:id/models", (req, res) => {
 });
 app.get("/api/public/tiers", (req, res) => {
   const tiers = db.prepare("SELECT * FROM tiers ORDER BY sort_order").all().map((t) => ({
-    id: t.id, slug: t.slug, name: t.name, audienceLabel: t.audience_label, badge: t.badge, maxModels: t.max_models, locked: ["plus", "pro", "premium", "media2"].includes(t.slug),
+    id: t.id, slug: t.slug, name: t.name, audienceLabel: t.audience_label, badge: t.badge, maxModels: t.max_models, locked: ["pro", "premium", "media2"].includes(t.slug),
     providers: db.prepare("SELECT * FROM providers WHERE tier_id=? ORDER BY sort_order").all(t.id).map(publicProvider),
   }));
   res.json({ ok: true, tiers });
@@ -1516,7 +1516,7 @@ app.post("/api/voucher/redeem", requireAuth, (req, res) => {
   if (!v) return res.status(404).json({ ok: false, error: "Kode vocher tidak ditemukan." });
   if (v.used) return res.status(400).json({ ok: false, error: "Kode vocher sudah dipakai." });
   // KUNCI TOTAL (2026-10-29): vocher tier terkunci tidak bisa ditukar (dicek SEBELUM vocher ditandai terpakai).
-  if (["plus", "pro", "premium", "media2"].includes(v.tier_slug)) return res.status(400).json({ ok: false, error: "Tier ini sedang dikunci (Segera Hadir)." });
+  if (["pro", "premium", "media2"].includes(v.tier_slug)) return res.status(400).json({ ok: false, error: "Tier ini sedang dikunci (Segera Hadir)." });
   const expires = new Date(Date.now() + (v.duration_days || 0) * 86400000).toISOString();
   db.prepare("UPDATE vouchers SET used=1, used_by=?, used_at=datetime('now') WHERE id=?").run(req.user.id, v.id);
   db.prepare("UPDATE users SET tier_slug=?, tier_expires_at=? WHERE id=?").run(v.tier_slug, expires, req.user.id);
@@ -1729,8 +1729,7 @@ function gatewayAuth(req) {
     try {
       const t = db.prepare("SELECT slug FROM tiers WHERE id=?").get(key.tier_id);
       if (t && t.slug === "pro") key._pro_locked = true;
-      // Plus masih "Segera Hadir".
-      if (t && t.slug === "plus") key._coming_soon = true;
+      // Plus DIBUKA lagi (2026-10-29 malam, perintah Hestia).
       // KUNCI TOTAL (2026-10-29, perintah Hestia): Premium Segera Hadir seperti Plus/Pro.
       if (t && t.slug === "premium") key._premium_locked = true;
       // KUNCI TOTAL (2026-10-29 malam, perintah Hestia): Media V2 dikunci dulu.
