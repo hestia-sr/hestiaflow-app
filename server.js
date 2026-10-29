@@ -249,6 +249,19 @@ for (const [k, v] of Object.entries(process.env)) {
   try { db.prepare("UPDATE providers SET upstream_url=? WHERE brand_name=?").run(url, brand); } catch {}
 }
 
+// Sync provider upstream API KEYS from env vars (PROVIDER_<BRAND>_UPSTREAM_API_KEY).
+// Jalur operator untuk memasang kunci provider tanpa panel admin — nilai hanya
+// hidup di env Railway, tidak pernah ditulis di kode (anti-bocor).
+for (const [k, v] of Object.entries(process.env)) {
+  if (!k.startsWith("PROVIDER_") || !k.endsWith("_UPSTREAM_API_KEY")) continue;
+  const raw = k.slice("PROVIDER_".length, -"_UPSTREAM_API_KEY".length);
+  if (!raw) continue;
+  const brand = raw.charAt(0) + raw.slice(1).toLowerCase();
+  const key = String(v || "").trim();
+  if (!key) continue;
+  try { db.prepare("UPDATE providers SET upstream_api_key=? WHERE brand_name=?").run(key, brand); } catch {}
+}
+
 // ---------- helpers ----------
 const app = express();
 // Limit body diperbesar: input gambar base64 untuk image-to-image (Media V2).
