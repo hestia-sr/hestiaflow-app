@@ -661,10 +661,18 @@ async function tryAutoRegisterNova(provider) {
 async function tryAutoRegisterRooyai(provider) {
   const apiBase = "https://llm.rooyai.com/v1";
   const supaAnon = process.env.ROOYAI_SUPABASE_ANON_KEY || "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg3NzIzNDIwLCJleHAiOjIxMDMwODM0MjB9.g5QfJJ3tuQKZf4m3K-k1lO60ixpkP6-g1fqnMKgF-oI";
-  const tempEmail = `rooyai${Date.now()}${Math.floor(Math.random()*9999)}@tempomail.id`;
+  let tempEmail = null;
   const tempPassword = `Rooyai${Math.floor(100000+Math.random()*900000)}@#`;
   const tempName = "HestiaFlow User";
   try {
+    // 0) Alamat email dari tempmail.ing (perintah Hestia 2026-10-29): domain email lama
+    // ditolak upstream sebagai disposable; alamat tempmail.ing diterima (terbukti live).
+    try {
+      const gm = await fetch("https://api.tempmail.ing/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ duration: 10 }) });
+      const gj = await gm.json().catch(() => null);
+      if (gj && gj.email && gj.email.address) tempEmail = gj.email.address;
+    } catch {}
+    if (!tempEmail) { console.log("[rooyai] tempmail generate failed"); return null; }
     // 1) Register
     const rg = await fetch("https://llm.rooyai.com/api/auth/register", {
       method: "POST", headers: { "Content-Type": "application/json", "User-Agent": "HestiaFlow/1.0" },
