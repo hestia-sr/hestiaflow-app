@@ -115,7 +115,7 @@ footer img{width:30px;height:30px;border-radius:50%;object-fit:cover;border:0;ve
 
 .tier-aud{min-height:3em}
 
-.tier-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.tier-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap}
 .tier-price{text-align:right;flex-shrink:0}
 .tier-price .price{font-size:20px;font-weight:800;color:var(--gold);line-height:1.2}
 .tier-price .price-dur{font-size:12px;color:var(--plum);margin-top:2px}
@@ -130,9 +130,6 @@ footer img{width:30px;height:30px;border-radius:50%;object-fit:cover;border:0;ve
   opacity: 0.85;
   filter: grayscale(1);
 }
-/* Perbaikan 2026-10-28: harga di kartu terkunci digeser kiri 48px supaya
-   tidak tertutup ikon gembok 40px di pojok kanan atas kartu. */
-.card.locked-card .tier-price{padding-right:48px}
 .card-lock-overlay {
   position: absolute;
   top: 10px;
@@ -193,3 +190,34 @@ button[style*="b91c1c"]{color:#1e293b !important}
 
 .badge.bansos{filter:grayscale(1)}
 .bansos-logo{filter:grayscale(1)}
+
+/* Overlay blur kartu terkunci, meniru Bansos (2026-10-29): menutup seluruh kartu,
+   isi di bawahnya buram, gembok besar di tengah. pointer-events none agar klik
+   kartu tetap sampai ke modal Segera Hadir. */
+.card-lock-blur {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(245,240,235,.45);
+  backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(1.5px);
+  border-radius: 18px;
+  z-index: 5;
+  pointer-events: none;
+}
+.card-lock-blur span {
+  font-size: 120px;
+  line-height: 1;
+  filter: grayscale(1) drop-shadow(0 10px 24px rgba(15,23,42,.3));
+}
+/* Pil Segera Hadir tetap terbaca di atas overlay blur. */
+.card.locked-card .lock-pill {
+  position: relative;
+  z-index: 6;
+}
+
+/* Cegah layar bisa digeser kanan-kiri (2026-10-29): overflow-x di body saja
+   tidak cukup di browser HP — kunci juga di html. */
+html{overflow-x:hidden}
