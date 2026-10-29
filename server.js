@@ -981,23 +981,17 @@ function lyraFindConfirmLink(text) {
   return mm ? mm[0].replace(/&amp;/g, "&") : null;
 }
 async function lyraReadConfirmLink(email, maxWaitMs) {
-  const seen = new Set();
+  // Inbox tempmail.ing (2026-10-30): GET /api/emails/<alamat> -> { emails: [...] }.
+  // Seluruh objek pesan di-stringify agar link konfirmasi ketemu di field text/html mana pun.
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
     try {
-      const rl = await mpGet("/mailbox/" + encodeURIComponent(email));
+      const rl = await fetch("https://api.tempmail.ing/api/emails/" + encodeURIComponent(email), { signal: AbortSignal.timeout(20000) });
       if (rl.ok) {
-        const msgs = await rl.json().catch(() => []);
-        for (const msg of Array.isArray(msgs) ? msgs : []) {
-          if (!msg || !msg.id || seen.has(msg.id)) continue;
-          seen.add(msg.id);
-          let link = null;
-          const rd = await mpGet("/mailbox/" + encodeURIComponent(email) + "/" + msg.id);
-          if (rd.ok) { const dj = await rd.json().catch(() => null); link = lyraFindConfirmLink(dj && dj.body); }
-          if (!link) {
-            const rs = await mpGet("/mailbox/" + encodeURIComponent(email) + "/" + msg.id + "/source");
-            if (rs.ok) { const raw = await rs.text(); link = lyraFindConfirmLink(raw.replace(/=\r\n/g, "").replace(/=\n/g, "").replace(/=3D/g, "=")); }
-          }
+        const dj = await rl.json().catch(() => null);
+        const msgs = dj && Array.isArray(dj.emails) ? dj.emails : [];
+        for (const msg of msgs) {
+          const link = lyraFindConfirmLink(JSON.stringify(msg || {}));
           if (link) return link;
         }
       }
@@ -1009,7 +1003,11 @@ async function lyraReadConfirmLink(email, maxWaitMs) {
 
 async function tryAutoRegisterLyra(provider) {
   // Lyra (Gratis, 2026-10-29): daftar akun upstream via Supabase auth + konfirmasi email
-  // Mailporary, lalu ambil API key asli (sk_) dari tabel api_keys via REST.
+  // sementara, lalu ambil API key asli (sk_) dari tabel api_keys via REST.
+  // 2026-10-30 (perintah Hestia): sumber email diganti Mailporary -> tempmail.ing karena
+  // domain Mailporary diblokir upstream ("Registration with this email domain is not
+  // allowed"); domain tempmail.ing terbukti lolos. Sandi diperkuat (upstream menolak
+  // sandi yang umum/lemah).
   // Alur TERBUKTI persis oleh script operator di hari yang sama (daftar -> konfirmasi ->
   // login -> key sk_). KEPUTUSAN OPERATOR 2026-10-29 (khusus Lyra/tier Gratis, menggantikan
   // aturan proxy+UA umum): panen DIRECT tanpa proxy dan tanpa UA khusus — upstream ini
@@ -1022,13 +1020,15 @@ async function tryAutoRegisterLyra(provider) {
   const refCode = process.env.LYRA_REF_CODE || "QWKWJ3QG";
   const namaPool = ["raka", "dimas", "putri", "sari", "budi", "ayu", "fajar", "nadia", "rizki", "dewi", "bagas", "citra"];
   const nama = namaPool[Math.floor(Math.random() * namaPool.length)];
-  const tempPassword = nama.charAt(0).toUpperCase() + nama.slice(1) + Math.floor(10000 + Math.random() * 90000) + "!";
+  const hurufEkstra = [...crypto.randomBytes(2)].map((b) => "abcdefghijklmnopqrstuvwxyz"[b % 26]).join("");
+  const tempPassword = nama.charAt(0).toUpperCase() + nama.slice(1) + "#" + Math.floor(10000 + Math.random() * 90000) + hurufEkstra;
   let tempEmail = null;
   try {
-    const st = await mpState();
-    const local = [...crypto.randomBytes(10)].map((b) => "abcdefghijklmnopqrstuvwxyz0123456789"[b % 36]).join("");
-    tempEmail = local + "@" + st.domains[Math.floor(Math.random() * st.domains.length)];
-  } catch (e) { console.log("[lyra] mailporary exception", e && e.message); return null; }
+    const gm = await fetch("https://api.tempmail.ing/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ duration: 10 }), signal: AbortSignal.timeout(20000) });
+    const gj = gm.ok ? await gm.json().catch(() => null) : null;
+    tempEmail = gj && gj.email && gj.email.address ? gj.email.address : null;
+    if (!tempEmail) { console.log("[lyra] tempmail.ing generate gagal"); return null; }
+  } catch (e) { console.log("[lyra] tempmail.ing exception", e && e.message); return null; }
   try {
     // 1) Signup DIRECT (tanpa proxy, tanpa UA khusus — keputusan operator di atas).
     let signed = false;
