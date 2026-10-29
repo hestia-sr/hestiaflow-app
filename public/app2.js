@@ -272,13 +272,13 @@ async function deleteAdminKey(id, btn) {
   catch (e) { alert("Gagal hapus key: " + e.message); btn.disabled = false; btn.textContent = "Hapus Key"; btn.dataset.armed = ""; }
 }
 function clampCount(el) { let v = parseInt(el.value, 10); if (isNaN(v)) v = 1; el.value = Math.max(1, Math.min(50, v)); }
-const TIER_HARVEST_LIMIT = { gratis: 100, plus: 500, pro: 1500, premium: 5000, media: 500 };
+const TIER_HARVEST_LIMIT = { gratis: 100, plus: 500, pro: 1500, premium: 5000, media: 500, media2: 50 };
 function userHarvestLimit() { const pid = Number(selectedHarvestProviderId); const item = TIERS.flatMap((t) => (t.providers || []).map((p) => ({ tier: t, p }))).find((x) => x.p.id === pid); return item ? (TIER_HARVEST_LIMIT[item.tier.slug] || 50) : 50; }
 function updateHarvestLimitUI() { const lim = userHarvestLimit(); const lbl = $("#harvestCountLabel"); if (lbl) lbl.textContent = `Jumlah akun (1–${lim})`; const el = $("#harvestCount"); if (el) { el.max = lim; el.value = Math.max(1, Math.min(lim, parseInt(el.value, 10) || 1)); } }
 function clampUserCount(el) { let v = parseInt(el.value, 10); if (isNaN(v)) v = 1; el.value = Math.max(1, Math.min(userHarvestLimit(), v)); }
 function stepCount(d) { const el = $("#harvestCount"); if (!el) return; el.value = Math.max(1, Math.min(userHarvestLimit(), (parseInt(el.value, 10) || 1) + d)); }
 let selectedHarvestProviderId = null;
-const TIER_RANK = { gratis: 0, plus: 1, pro: 2, premium: 3, media: 0 };
+const TIER_RANK = { gratis: 0, plus: 1, pro: 2, premium: 3, media: 0, media2: 0 };
 function showTierLocked() {
   let m = $("#tierLockModal");
   if (!m) {
@@ -309,7 +309,7 @@ function showComingSoon() {
 function closeTierLocked() { const m = $("#tierLockModal"); if (m) m.style.display = "none"; }
 function renderHarvestSidebar() {
   const el = $("#harvestProviderSidebar"); if (!el) return;
-  const short = { gratis: "Gratis", plus: "Plus", pro: "Pro", premium: "Prem", media: "Media" };
+  const short = { gratis: "Gratis", plus: "Plus", pro: "Pro", premium: "Prem", media: "Media", media2: "Media V2" };
   const items = [];
   TIERS.forEach((t) => (t.providers || []).forEach((p) => items.push({ tier: t, p })));
   if (!items.length) { el.innerHTML = `<p class="muted">Belum ada provider.</p>`; return; }
@@ -335,7 +335,7 @@ function selectHarvestProvider(pid) {
   selectedHarvestProviderId = pid;
   document.querySelectorAll(".tier-side-opt").forEach((d) => d.classList.toggle("sel", Number(d.dataset.pid) === pid));
   const pop = $("#harvestProviderSidebar"); if (pop) pop.style.display = "none";
-  const short = { gratis: "Gratis", plus: "Plus", pro: "Pro", premium: "Prem", media: "Media" };
+  const short = { gratis: "Gratis", plus: "Plus", pro: "Pro", premium: "Prem", media: "Media", media2: "Media V2" };
   const cur = (TIERS.flatMap((t) => (t.providers || []).map((p) => ({ tier: t, p })))).find((x) => x.p.id === pid);
   const lbl = $("#tierPickerLabel"); if (lbl && cur) lbl.textContent = `${short[cur.tier.slug] || cur.tier.name} • ${cur.p.modelCount} Model`;
   updateHarvestLimitUI();
