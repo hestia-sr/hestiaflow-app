@@ -43,6 +43,10 @@ const AURORA_MODELS = ["deepseek-v3.1","deepseek-v3.2","deepseek-v4-flash","deep
 // STELLA_MODEL_MAP menerjemahkan nama pendek -> id upstream (server-side saja).
 const STELLA_PUBLIC_MODELS = ["claude-fable-5", "claude-fable-5.1", "claude-haiku-4.5", "claude-haiku-5.5", "claude-opus-4.1", "claude-opus-4.5", "claude-opus-4.6", "claude-opus-4.7", "claude-opus-4.8", "claude-opus-5", "claude-opus-5.5", "claude-sonnet-4.5", "claude-sonnet-4.6", "claude-sonnet-5", "claude-sonnet-5.5", "codestral-2508", "command-a", "command-a-plus", "command-r-08-2024", "command-r-plus-08-2024", "command-r7b-12-2024", "deepseek-chat", "deepseek-chat-v3-0324", "deepseek-chat-v3.1", "deepseek-r1-0528", "deepseek-v3.1-terminus", "deepseek-v3.2", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-pro", "deepseek-v4.1-flash", "devstral-2512", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro", "gemini-3-flash-preview", "gemini-3.1-flash-lite", "gemini-3.1-pro-preview", "gemini-3.1-pro-preview-customtools", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash", "gemini-4-argon", "gemma-2-27b-it", "gemma-3-12b-it", "gemma-3-27b-it", "gemma-3-4b-it", "gemma-4-26b-a4b-it", "gemma-4-31b-it", "glm-4.5", "glm-4.5-air", "glm-4.5v", "glm-4.6", "glm-4.6v", "glm-4.7", "glm-4.7-flash", "glm-5", "glm-5-turbo", "glm-5.1", "glm-5.2", "glm-5.3", "glm-5.3-flash", "glm-5.3-flashx", "glm-5.3-prime", "glm-5v-turbo", "gpt-3.5-turbo-0613", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5-pro", "gpt-5.1", "gpt-5.1-codex", "gpt-5.1-codex-max", "gpt-5.1-codex-mini", "gpt-5.2", "gpt-5.2-codex", "gpt-5.2-pro", "gpt-5.3-codex", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.4-pro", "gpt-5.5", "gpt-5.5-pro", "gpt-5.6-luna", "gpt-5.6-luna-pro", "gpt-5.6-sol", "gpt-5.6-sol-pro", "gpt-5.6-terra", "gpt-5.6-terra-pro", "gpt-6-astra", "gpt-6-astra-pro", "gpt-6-luna", "gpt-6-luna-pro", "gpt-6-sol", "gpt-6-sol-pro", "gpt-6.1-sol", "gpt-6.1-sol-pro", "gpt-chat-latest", "gpt-oss-120b", "gpt-oss-20b", "gpt-oss-safeguard-20b", "granite-4.0-h-micro", "granite-4.2-8b", "grok-4.20", "grok-4.20-multi-agent", "grok-4.3", "grok-4.5", "grok-4.6", "grok-4.7", "grok-build-0.1", "hunyuan-a13b-instruct", "hy-mt2-1.8b", "hy-mt2-30b-a3b", "hy-mt2-7b", "hy3", "hy4-preview", "kimi-k2", "kimi-k2-thinking", "kimi-k2.5", "kimi-k2.6", "kimi-k2.7-code", "kimi-k3", "llama-3.1-70b-instruct", "llama-3.1-8b-instruct", "llama-3.2-1b-instruct", "llama-3.2-3b-instruct", "llama-3.3-70b-instruct", "llama-4-maverick", "llama-4-scout", "llama-guard-4-12b", "mimo-v2.5", "mimo-v2.5-pro", "mimo-v2.6-flash", "mimo-v2.6-pro", "mimo-v2.6-pro-ultraspeed", "minimax-01", "minimax-m1", "minimax-m2", "minimax-m2-her", "minimax-m2.1", "minimax-m2.5", "minimax-m2.7", "minimax-m3", "ministral-14b-2512", "ministral-3b-2512", "ministral-8b-2512", "mistral-large", "mistral-large-4-0", "mistral-medium-3", "mistral-medium-3-5", "mistral-medium-3.1", "mistral-nemo", "mistral-saba", "mistral-small-24b-instruct-2501", "mistral-small-3.1-24b-instruct", "mistral-small-3.2-24b-instruct", "muse-glimmer-30b", "muse-spark-1.1", "muse-spark-1.2", "muse-spark-1.3", "muse-spark-open", "muse-wonder", "nemotron-3-nano-30b-a3b", "nemotron-3-super-120b-a12b", "nemotron-3-ultra-550b-a55b", "nemotron-3.5-content-safety", "nemotron-3.5-lightning", "nemotron-3.5-super-vl", "nova-2-lite-v1", "nova-lite-v1", "nova-micro-v1", "nova-pro-v1", "o3", "o3-pro", "phi-4", "qwen-2.5-72b-instruct", "qwen-2.5-7b-instruct", "qwen-2.5-coder-32b-instruct", "qwen-plus", "qwen2.5-vl-72b-instruct", "qwen3-14b", "qwen3-235b-a22b-2507", "qwen3-235b-a22b-thinking-2507", "qwen3-30b-a3b", "qwen3-30b-a3b-instruct-2507", "qwen3-32b", "qwen3-coder", "qwen3-coder-30b-a3b-instruct", "qwen3-coder-flash", "qwen3-coder-next", "qwen3-next-80b-a3b-instruct", "qwen3-vl-235b-a22b-instruct", "qwen3-vl-30b-a3b-instruct", "qwen3-vl-30b-a3b-thinking", "qwen3-vl-8b-instruct", "qwen3.5-122b-a10b", "qwen3.5-27b", "qwen3.5-35b-a3b", "qwen3.5-397b-a17b", "qwen3.5-9b", "qwen3.5-flash-02-23", "qwen3.5-plus-20260420", "qwen3.6-27b", "qwen3.6-35b-a3b", "qwen3.6-flash", "qwen3.6-plus", "qwen3.7-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.8-2.4t-a95b", "qwen3.8-27b", "qwen3.8-flash", "qwen3.8-max-0902", "qwen3.8-max-prime", "qwen3.8-omni-flash", "seed-1.6", "seed-1.6-flash", "seed-2-1-turbo", "seed-2.0-code", "seed-2.0-lite", "seed-2.0-mini", "sonar", "sonar-pro", "sonar-pro-search", "sonar-reasoning-pro", "ui-tars-1.5-7b", "voxtral-small-24b-2507"];
 const STELLA_MODEL_MAP = {"nova-2-lite-v1": "amazon/nova-2-lite-v1", "nova-lite-v1": "amazon/nova-lite-v1", "nova-micro-v1": "amazon/nova-micro-v1", "nova-pro-v1": "amazon/nova-pro-v1", "claude-fable-5": "anthropic/claude-fable-5", "claude-fable-5.1": "anthropic/claude-fable-5.1", "claude-haiku-4.5": "anthropic/claude-haiku-4.5", "claude-haiku-5.5": "anthropic/claude-haiku-5.5", "claude-opus-4.1": "anthropic/claude-opus-4.1", "claude-opus-4.5": "anthropic/claude-opus-4.5", "claude-opus-4.6": "anthropic/claude-opus-4.6", "claude-opus-4.7": "anthropic/claude-opus-4.7", "claude-opus-4.8": "anthropic/claude-opus-4.8", "claude-opus-5": "anthropic/claude-opus-5", "claude-opus-5.5": "anthropic/claude-opus-5.5", "claude-sonnet-4.5": "anthropic/claude-sonnet-4.5", "claude-sonnet-4.6": "anthropic/claude-sonnet-4.6", "claude-sonnet-5": "anthropic/claude-sonnet-5", "claude-sonnet-5.5": "anthropic/claude-sonnet-5.5", "seed-1.6": "bytedance-seed/seed-1.6", "seed-1.6-flash": "bytedance-seed/seed-1.6-flash", "seed-2-1-turbo": "bytedance-seed/seed-2-1-turbo", "seed-2.0-code": "bytedance-seed/seed-2.0-code", "seed-2.0-lite": "bytedance-seed/seed-2.0-lite", "seed-2.0-mini": "bytedance-seed/seed-2.0-mini", "ui-tars-1.5-7b": "bytedance/ui-tars-1.5-7b", "command-a": "cohere/command-a", "command-a-plus": "cohere/command-a-plus", "command-r-08-2024": "cohere/command-r-08-2024", "command-r-plus-08-2024": "cohere/command-r-plus-08-2024", "command-r7b-12-2024": "cohere/command-r7b-12-2024", "deepseek-chat": "deepseek/deepseek-chat", "deepseek-chat-v3-0324": "deepseek/deepseek-chat-v3-0324", "deepseek-chat-v3.1": "deepseek/deepseek-chat-v3.1", "deepseek-r1-0528": "deepseek/deepseek-r1-0528", "deepseek-v3.1-terminus": "deepseek/deepseek-v3.1-terminus", "deepseek-v3.2": "deepseek/deepseek-v3.2", "deepseek-v4-flash": "deepseek/deepseek-v4-flash", "deepseek-v4-flash-vision-exp": "deepseek/deepseek-v4-flash-vision-exp", "deepseek-v4-pro": "deepseek/deepseek-v4-pro", "deepseek-v4.1-flash": "deepseek/deepseek-v4.1-flash", "gemini-2.5-flash": "google/gemini-2.5-flash", "gemini-2.5-flash-lite": "google/gemini-2.5-flash-lite", "gemini-2.5-pro": "google/gemini-2.5-pro", "gemini-3-flash-preview": "google/gemini-3-flash-preview", "gemini-3.1-flash-lite": "google/gemini-3.1-flash-lite", "gemini-3.1-pro-preview": "google/gemini-3.1-pro-preview", "gemini-3.1-pro-preview-customtools": "google/gemini-3.1-pro-preview-customtools", "gemini-3.5-flash": "google/gemini-3.5-flash", "gemini-3.5-flash-lite": "google/gemini-3.5-flash-lite", "gemini-3.6-flash": "google/gemini-3.6-flash", "gemini-3.7-flash": "google/gemini-3.7-flash", "gemini-3.8-flash": "google/gemini-3.8-flash", "gemini-4-argon": "google/gemini-4-argon", "gemma-2-27b-it": "google/gemma-2-27b-it", "gemma-3-12b-it": "google/gemma-3-12b-it", "gemma-3-27b-it": "google/gemma-3-27b-it", "gemma-3-4b-it": "google/gemma-3-4b-it", "gemma-4-26b-a4b-it": "google/gemma-4-26b-a4b-it", "gemma-4-31b-it": "google/gemma-4-31b-it", "granite-4.0-h-micro": "ibm-granite/granite-4.0-h-micro", "granite-4.2-8b": "ibm-granite/granite-4.2-8b", "llama-3.1-70b-instruct": "meta-llama/llama-3.1-70b-instruct", "llama-3.1-8b-instruct": "meta-llama/llama-3.1-8b-instruct", "llama-3.2-1b-instruct": "meta-llama/llama-3.2-1b-instruct", "llama-3.2-3b-instruct": "meta-llama/llama-3.2-3b-instruct", "llama-3.3-70b-instruct": "meta-llama/llama-3.3-70b-instruct", "llama-4-maverick": "meta-llama/llama-4-maverick", "llama-4-scout": "meta-llama/llama-4-scout", "llama-guard-4-12b": "meta-llama/llama-guard-4-12b", "muse-glimmer-30b": "meta/muse-glimmer-30b", "muse-spark-1.1": "meta/muse-spark-1.1", "muse-spark-1.2": "meta/muse-spark-1.2", "muse-spark-1.3": "meta/muse-spark-1.3", "muse-spark-open": "meta/muse-spark-open", "muse-wonder": "meta/muse-wonder", "phi-4": "microsoft/phi-4", "minimax-01": "minimax/minimax-01", "minimax-m1": "minimax/minimax-m1", "minimax-m2": "minimax/minimax-m2", "minimax-m2-her": "minimax/minimax-m2-her", "minimax-m2.1": "minimax/minimax-m2.1", "minimax-m2.5": "minimax/minimax-m2.5", "minimax-m2.7": "minimax/minimax-m2.7", "minimax-m3": "minimax/minimax-m3", "codestral-2508": "mistralai/codestral-2508", "devstral-2512": "mistralai/devstral-2512", "ministral-14b-2512": "mistralai/ministral-14b-2512", "ministral-3b-2512": "mistralai/ministral-3b-2512", "ministral-8b-2512": "mistralai/ministral-8b-2512", "mistral-large": "mistralai/mistral-large", "mistral-large-4-0": "mistralai/mistral-large-4-0", "mistral-medium-3": "mistralai/mistral-medium-3", "mistral-medium-3-5": "mistralai/mistral-medium-3-5", "mistral-medium-3.1": "mistralai/mistral-medium-3.1", "mistral-nemo": "mistralai/mistral-nemo", "mistral-saba": "mistralai/mistral-saba", "mistral-small-24b-instruct-2501": "mistralai/mistral-small-24b-instruct-2501", "mistral-small-3.1-24b-instruct": "mistralai/mistral-small-3.1-24b-instruct", "mistral-small-3.2-24b-instruct": "mistralai/mistral-small-3.2-24b-instruct", "voxtral-small-24b-2507": "mistralai/voxtral-small-24b-2507", "kimi-k2": "moonshotai/kimi-k2", "kimi-k2-thinking": "moonshotai/kimi-k2-thinking", "kimi-k2.5": "moonshotai/kimi-k2.5", "kimi-k2.6": "moonshotai/kimi-k2.6", "kimi-k2.7-code": "moonshotai/kimi-k2.7-code", "kimi-k3": "moonshotai/kimi-k3", "nemotron-3-nano-30b-a3b": "nvidia/nemotron-3-nano-30b-a3b", "nemotron-3-super-120b-a12b": "nvidia/nemotron-3-super-120b-a12b", "nemotron-3-ultra-550b-a55b": "nvidia/nemotron-3-ultra-550b-a55b", "nemotron-3.5-content-safety": "nvidia/nemotron-3.5-content-safety", "nemotron-3.5-lightning": "nvidia/nemotron-3.5-lightning", "nemotron-3.5-super-vl": "nvidia/nemotron-3.5-super-vl", "gpt-3.5-turbo-0613": "openai/gpt-3.5-turbo-0613", "gpt-3.5-turbo-16k": "openai/gpt-3.5-turbo-16k", "gpt-4": "openai/gpt-4", "gpt-4.1": "openai/gpt-4.1", "gpt-4.1-mini": "openai/gpt-4.1-mini", "gpt-4.1-nano": "openai/gpt-4.1-nano", "gpt-4o": "openai/gpt-4o", "gpt-4o-mini": "openai/gpt-4o-mini", "gpt-5": "openai/gpt-5", "gpt-5-mini": "openai/gpt-5-mini", "gpt-5-nano": "openai/gpt-5-nano", "gpt-5-pro": "openai/gpt-5-pro", "gpt-5.1": "openai/gpt-5.1", "gpt-5.1-codex": "openai/gpt-5.1-codex", "gpt-5.1-codex-max": "openai/gpt-5.1-codex-max", "gpt-5.1-codex-mini": "openai/gpt-5.1-codex-mini", "gpt-5.2": "openai/gpt-5.2", "gpt-5.2-codex": "openai/gpt-5.2-codex", "gpt-5.2-pro": "openai/gpt-5.2-pro", "gpt-5.3-codex": "openai/gpt-5.3-codex", "gpt-5.4": "openai/gpt-5.4", "gpt-5.4-mini": "openai/gpt-5.4-mini", "gpt-5.4-nano": "openai/gpt-5.4-nano", "gpt-5.4-pro": "openai/gpt-5.4-pro", "gpt-5.5": "openai/gpt-5.5", "gpt-5.5-pro": "openai/gpt-5.5-pro", "gpt-5.6-luna": "openai/gpt-5.6-luna", "gpt-5.6-luna-pro": "openai/gpt-5.6-luna-pro", "gpt-5.6-sol": "openai/gpt-5.6-sol", "gpt-5.6-sol-pro": "openai/gpt-5.6-sol-pro", "gpt-5.6-terra": "openai/gpt-5.6-terra", "gpt-5.6-terra-pro": "openai/gpt-5.6-terra-pro", "gpt-6-astra": "openai/gpt-6-astra", "gpt-6-astra-pro": "openai/gpt-6-astra-pro", "gpt-6-luna": "openai/gpt-6-luna", "gpt-6-luna-pro": "openai/gpt-6-luna-pro", "gpt-6-sol": "openai/gpt-6-sol", "gpt-6-sol-pro": "openai/gpt-6-sol-pro", "gpt-6.1-sol": "openai/gpt-6.1-sol", "gpt-6.1-sol-pro": "openai/gpt-6.1-sol-pro", "gpt-chat-latest": "openai/gpt-chat-latest", "gpt-oss-120b": "openai/gpt-oss-120b", "gpt-oss-20b": "openai/gpt-oss-20b", "gpt-oss-safeguard-20b": "openai/gpt-oss-safeguard-20b", "o3": "openai/o3", "o3-pro": "openai/o3-pro", "sonar": "perplexity/sonar", "sonar-pro": "perplexity/sonar-pro", "sonar-pro-search": "perplexity/sonar-pro-search", "sonar-reasoning-pro": "perplexity/sonar-reasoning-pro", "qwen-2.5-72b-instruct": "qwen/qwen-2.5-72b-instruct", "qwen-2.5-7b-instruct": "qwen/qwen-2.5-7b-instruct", "qwen-2.5-coder-32b-instruct": "qwen/qwen-2.5-coder-32b-instruct", "qwen-plus": "qwen/qwen-plus", "qwen2.5-vl-72b-instruct": "qwen/qwen2.5-vl-72b-instruct", "qwen3-14b": "qwen/qwen3-14b", "qwen3-235b-a22b-2507": "qwen/qwen3-235b-a22b-2507", "qwen3-235b-a22b-thinking-2507": "qwen/qwen3-235b-a22b-thinking-2507", "qwen3-30b-a3b": "qwen/qwen3-30b-a3b", "qwen3-30b-a3b-instruct-2507": "qwen/qwen3-30b-a3b-instruct-2507", "qwen3-32b": "qwen/qwen3-32b", "qwen3-coder": "qwen/qwen3-coder", "qwen3-coder-30b-a3b-instruct": "qwen/qwen3-coder-30b-a3b-instruct", "qwen3-coder-flash": "qwen/qwen3-coder-flash", "qwen3-coder-next": "qwen/qwen3-coder-next", "qwen3-next-80b-a3b-instruct": "qwen/qwen3-next-80b-a3b-instruct", "qwen3-vl-235b-a22b-instruct": "qwen/qwen3-vl-235b-a22b-instruct", "qwen3-vl-30b-a3b-instruct": "qwen/qwen3-vl-30b-a3b-instruct", "qwen3-vl-30b-a3b-thinking": "qwen/qwen3-vl-30b-a3b-thinking", "qwen3-vl-8b-instruct": "qwen/qwen3-vl-8b-instruct", "qwen3.5-122b-a10b": "qwen/qwen3.5-122b-a10b", "qwen3.5-27b": "qwen/qwen3.5-27b", "qwen3.5-35b-a3b": "qwen/qwen3.5-35b-a3b", "qwen3.5-397b-a17b": "qwen/qwen3.5-397b-a17b", "qwen3.5-9b": "qwen/qwen3.5-9b", "qwen3.5-flash-02-23": "qwen/qwen3.5-flash-02-23", "qwen3.5-plus-20260420": "qwen/qwen3.5-plus-20260420", "qwen3.6-27b": "qwen/qwen3.6-27b", "qwen3.6-35b-a3b": "qwen/qwen3.6-35b-a3b", "qwen3.6-flash": "qwen/qwen3.6-flash", "qwen3.6-plus": "qwen/qwen3.6-plus", "qwen3.7-flash": "qwen/qwen3.7-flash", "qwen3.7-max": "qwen/qwen3.7-max", "qwen3.7-plus": "qwen/qwen3.7-plus", "qwen3.8-2.4t-a95b": "qwen/qwen3.8-2.4t-a95b", "qwen3.8-27b": "qwen/qwen3.8-27b", "qwen3.8-flash": "qwen/qwen3.8-flash", "qwen3.8-max-0902": "qwen/qwen3.8-max-0902", "qwen3.8-max-prime": "qwen/qwen3.8-max-prime", "qwen3.8-omni-flash": "qwen/qwen3.8-omni-flash", "hunyuan-a13b-instruct": "tencent/hunyuan-a13b-instruct", "hy-mt2-1.8b": "tencent/hy-mt2-1.8b", "hy-mt2-30b-a3b": "tencent/hy-mt2-30b-a3b", "hy-mt2-7b": "tencent/hy-mt2-7b", "hy3": "tencent/hy3", "hy4-preview": "tencent/hy4-preview", "grok-4.20": "x-ai/grok-4.20", "grok-4.20-multi-agent": "x-ai/grok-4.20-multi-agent", "grok-4.3": "x-ai/grok-4.3", "grok-4.5": "x-ai/grok-4.5", "grok-4.6": "x-ai/grok-4.6", "grok-4.7": "x-ai/grok-4.7", "grok-build-0.1": "x-ai/grok-build-0.1", "mimo-v2.5": "xiaomi/mimo-v2.5", "mimo-v2.5-pro": "xiaomi/mimo-v2.5-pro", "mimo-v2.6-flash": "xiaomi/mimo-v2.6-flash", "mimo-v2.6-pro": "xiaomi/mimo-v2.6-pro", "mimo-v2.6-pro-ultraspeed": "xiaomi/mimo-v2.6-pro-ultraspeed", "glm-4.5": "z-ai/glm-4.5", "glm-4.5-air": "z-ai/glm-4.5-air", "glm-4.5v": "z-ai/glm-4.5v", "glm-4.6": "z-ai/glm-4.6", "glm-4.6v": "z-ai/glm-4.6v", "glm-4.7": "z-ai/glm-4.7", "glm-4.7-flash": "z-ai/glm-4.7-flash", "glm-5": "z-ai/glm-5", "glm-5-turbo": "z-ai/glm-5-turbo", "glm-5.1": "z-ai/glm-5.1", "glm-5.2": "z-ai/glm-5.2", "glm-5.3": "z-ai/glm-5.3", "glm-5.3-flash": "z-ai/glm-5.3-flash", "glm-5.3-flashx": "z-ai/glm-5.3-flashx", "glm-5.3-prime": "z-ai/glm-5.3-prime", "glm-5v-turbo": "z-ai/glm-5v-turbo"};
+// LYRA (tier Gratis): nama publik pendek -> id upstream (server-side saja, pola sama seperti Stella).
+const LYRA_MODELS = ["DeepSeek-V4-Flash", "MiniMax-M2.7", "GLM-5.3-Flash"];
+const LYRA_MODEL_MAP = { "DeepSeek-V4-Flash": "deepseek-ai/DeepSeek-V4-Flash-0731", "MiniMax-M2.7": "MiniMaxAI/MiniMax-M2.7", "GLM-5.3-Flash": "zai-org/GLM-5.3-Flash" };
+const LYRA_NOTES = { "DeepSeek-V4-Flash": "DeepSeek V4 Flash — kencang untuk chat dan coding.", "MiniMax-M2.7": "MiniMax M2.7 — ringan dan cepat.", "GLM-5.3-Flash": "GLM 5.3 Flash — reasoning ringan." };
 function seed() {
   // Migrasi: tabel vouchers + users.tier_expires_at (masa berlaku paket dari vocher).
   db.prepare("CREATE TABLE IF NOT EXISTS vouchers (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, tier_slug TEXT, duration_days INTEGER, used INTEGER DEFAULT 0, used_by INTEGER, used_at TEXT, created_at TEXT DEFAULT (datetime('now')))").run();
@@ -154,6 +158,16 @@ function seed() {
   // Migrasi video Orion (2026-10-29): daftar model Orion bertambah 10 id video.
   // UPDATE unconditional (jalan tiap startup) agar DB live yang sudah punya baris Orion ikut berubah.
   try { db.prepare("UPDATE providers SET model_count=?, model_list_json=?, tagline=?, model_notes_json=? WHERE brand_name='Orion'").run(15, JSON.stringify(["flux", "gpt-image-2", "seedream", "gemini", "nano-banana-pro", "minimax", "luma", "wan", "kling", "veo-lite", "higgsfield-seedance", "kling-3.0", "kling-2.6", "veo-fast", "veo"]), "Gambar & video AI tanpa kartu, 200 kredit per akun.", JSON.stringify({"flux": "Gambar · 12 kredit per gambar", "gpt-image-2": "Gambar · 25 kredit per gambar", "seedream": "Gambar · 35 kredit per gambar", "gemini": "Gambar · 40 kredit per gambar", "nano-banana-pro": "Gambar · 80 kredit per gambar", "minimax": "Video · 140 kredit per video", "luma": "Video · 150 kredit per video", "wan": "Video · 170 kredit per video", "kling": "Video · 175 kredit per video 5 detik (35 kredit/detik)", "veo-lite": "Video · 240 kredit per video 8 detik (30 kredit/detik)", "higgsfield-seedance": "Video · 300 kredit per video 5 detik (60 kredit/detik)", "kling-3.0": "Video · 400 kredit per video 5 detik (80 kredit/detik)", "kling-2.6": "Video · 425 kredit per video 5 detik (85 kredit/detik)", "veo-fast": "Video · 480 kredit per video 8 detik (60 kredit/detik)", "veo": "Video · 1.920 kredit per video 8 detik (240 kredit/detik)"})); } catch {}
+  // Migrasi Lyra (Gratis, 2026-10-29, perintah Hestia): provider KEDUA di tier Gratis, Luna tidak diubah.
+  // Mesin di balik layar tidak ditampilkan publik (anti-bocor); upstream_url TIDAK ditulis di kode —
+  // diisi operator lewat env PROVIDER_LYRA_UPSTREAM_URL (sync env sesudah seed()).
+  // Katalog 3 model nama publik pendek (perintah Hestia); peta ke id upstream di LYRA_MODEL_MAP.
+  db.prepare("INSERT INTO providers (tier_id,brand_name,tagline,model_count,model_list_json,model_notes_json,credit_note,default_credit,sort_order) SELECT (SELECT id FROM tiers WHERE slug='gratis'),?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM providers WHERE brand_name='Lyra')").run(
+    "Lyra", "3 model gratis untuk semua.", 3, JSON.stringify(LYRA_MODELS), JSON.stringify(LYRA_NOTES), "20 juta token per akun.", 20000000, 2);
+  db.prepare("UPDATE providers SET tier_id=(SELECT id FROM tiers WHERE slug='gratis'), tagline=?, model_count=?, model_list_json=?, model_notes_json=?, credit_note=?, default_credit=? WHERE brand_name='Lyra'").run(
+    "3 model gratis untuk semua.", 3, JSON.stringify(LYRA_MODELS), JSON.stringify(LYRA_NOTES), "20 juta token per akun.", 20000000);
+  // Tier Gratis harus muat katalog 3 model (Lyra). Luna hanya berisi 2 model jadi tidak ikut berubah.
+  db.prepare("UPDATE tiers SET max_models=? WHERE slug=?").run(3, "gratis");
   const tierCount = db.prepare("SELECT COUNT(*) c FROM tiers").get().c;
   if (tierCount > 0) return;
   const insTier = db.prepare("INSERT INTO tiers (slug,name,audience_label,badge,max_models,sort_order) VALUES (?,?,?,?,?,?)");
@@ -819,6 +833,177 @@ async function tryAutoRegisterNearresearch(provider) {
   } catch (e) { console.log("[nearresearch] exception", e && e.message); return null; }
 }
 
+// ---------- Lyra: inbox Mailporary (token + daftar domain dari payload SSR halaman) ----------
+const MP_API = "https://web.mailporary.com/api/v1";
+const MP_FALLBACK_DOMAINS = ["suarj.com", "mfxis.com", "anogz.com", "jgkcr.com", "vbgvd.com", "wzjpj.com"];
+let _mpCache = { token: null, domains: null, at: 0 };
+async function mpRefresh() {
+  const r = await fetch("https://mailporary.com/id", { headers: { "User-Agent": randUA() }, signal: AbortSignal.timeout(20000) });
+  const html = await r.text();
+  const m = html.match(/id="__NUXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!m) throw new Error("payload tidak ditemukan");
+  const payload = JSON.parse(m[1]);
+  let token = null, domains = null;
+  for (const item of payload) {
+    if (item && typeof item === "object") {
+      if ("mailServiceToken" in item) token = payload[item.mailServiceToken];
+      if ("$semailDomains" in item) domains = payload[item["$semailDomains"]];
+    }
+  }
+  if (!token) {
+    const j = html.match(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/);
+    if (j) token = j[0];
+  }
+  if (!token) throw new Error("token tidak ditemukan");
+  _mpCache = { token, domains: Array.isArray(domains) && domains.length ? domains : MP_FALLBACK_DOMAINS, at: Date.now() };
+  return _mpCache;
+}
+async function mpState() {
+  if (_mpCache.token && Date.now() - _mpCache.at < 20 * 3600 * 1000) return _mpCache;
+  return mpRefresh();
+}
+function mpHeaders(token) {
+  return { Authorization: "Bearer " + token, "Content-Type": "application/json",
+    "X-Request-ID": crypto.randomBytes(16).toString("hex"), "X-Timestamp": String(Math.floor(Date.now() / 1000)),
+    "User-Agent": randUA() };
+}
+async function mpGet(p) {
+  let st = await mpState();
+  let r = await fetch(MP_API + p, { headers: mpHeaders(st.token), signal: AbortSignal.timeout(20000) });
+  if (r.status === 401) { st = await mpRefresh(); r = await fetch(MP_API + p, { headers: mpHeaders(st.token), signal: AbortSignal.timeout(20000) }); }
+  return r;
+}
+function lyraFindConfirmLink(text) {
+  if (!text) return null;
+  const mm = String(text).match(/https?:\/\/[A-Za-z0-9.-]+\.supabase\.co\/auth\/v1\/verify\?[^"\s<>\\]+/);
+  return mm ? mm[0].replace(/&amp;/g, "&") : null;
+}
+async function lyraReadConfirmLink(email, maxWaitMs) {
+  const seen = new Set();
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    try {
+      const rl = await mpGet("/mailbox/" + encodeURIComponent(email));
+      if (rl.ok) {
+        const msgs = await rl.json().catch(() => []);
+        for (const msg of Array.isArray(msgs) ? msgs : []) {
+          if (!msg || !msg.id || seen.has(msg.id)) continue;
+          seen.add(msg.id);
+          let link = null;
+          const rd = await mpGet("/mailbox/" + encodeURIComponent(email) + "/" + msg.id);
+          if (rd.ok) { const dj = await rd.json().catch(() => null); link = lyraFindConfirmLink(dj && dj.body); }
+          if (!link) {
+            const rs = await mpGet("/mailbox/" + encodeURIComponent(email) + "/" + msg.id + "/source");
+            if (rs.ok) { const raw = await rs.text(); link = lyraFindConfirmLink(raw.replace(/=\r\n/g, "").replace(/=\n/g, "").replace(/=3D/g, "=")); }
+          }
+          if (link) return link;
+        }
+      }
+    } catch {}
+    await new Promise((res) => setTimeout(res, 5000));
+  }
+  return null;
+}
+
+async function tryAutoRegisterLyra(provider) {
+  // Lyra (Gratis, 2026-10-29): daftar akun upstream via Supabase auth + konfirmasi email
+  // Mailporary, lalu ambil API key asli (sk_) dari tabel api_keys via REST.
+  // Alur TERBUKTI persis oleh script operator di hari yang sama (daftar -> konfirmasi ->
+  // login -> key sk_). Aturan anti-deteksi operator: signup WAJIB lewat proxy yang lolos
+  // cek hidup + UA acak + nama acak; tanpa proxy yang lolos, gagal jujur (null) —
+  // TIDAK ada fallback direct untuk signup.
+  const chatBase = stripV1(provider.upstream_url || "");
+  if (!chatBase) return null;
+  const supaRoot = chatBase.replace(/\/functions\/v1\/[^/]+$/, "");
+  if (supaRoot === chatBase) { console.log("[lyra] bentuk upstream_url tidak dikenal"); return null; }
+  const anon = process.env.LYRA_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhza3lhdWVmcWNnYnZndnhrbHVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5NDg0NDEsImV4cCI6MjA4OTUyNDQ0MX0.LmuGEk83Rdqg5CGa9E3mHjbuyueZdKMKU-lzScNRZwo";
+  const refCode = process.env.LYRA_REF_CODE || "QWKWJ3QG";
+  const namaPool = ["raka", "dimas", "putri", "sari", "budi", "ayu", "fajar", "nadia", "rizki", "dewi", "bagas", "citra"];
+  const nama = namaPool[Math.floor(Math.random() * namaPool.length)];
+  const tempPassword = nama.charAt(0).toUpperCase() + nama.slice(1) + Math.floor(10000 + Math.random() * 90000) + "!";
+  let tempEmail = null;
+  try {
+    const st = await mpState();
+    const local = [...crypto.randomBytes(10)].map((b) => "abcdefghijklmnopqrstuvwxyz0123456789"[b % 36]).join("");
+    tempEmail = local + "@" + st.domains[Math.floor(Math.random() * st.domains.length)];
+  } catch (e) { console.log("[lyra] mailporary exception", e && e.message); return null; }
+  try {
+    // 1) Signup lewat proxy hidup (maks 4 kali coba).
+    const proxies = await fetchProxyHidup(supaRoot);
+    let signed = false;
+    const sudahCoba = new Set();
+    let tries = 0;
+    while (tries < 4 && !signed) {
+      const eligible = proxies.filter((x) => !_proxy429Set.has(x) && !sudahCoba.has(x));
+      if (!eligible.length) break;
+      const p = eligible[Math.floor(Math.random() * eligible.length)];
+      sudahCoba.add(p);
+      if (!(await cekProxyHidup(supaRoot, p))) continue;
+      tries++;
+      try {
+        const opts = { method: "POST",
+          headers: { apikey: anon, "Content-Type": "application/json;charset=UTF-8", "User-Agent": randUA() },
+          body: JSON.stringify({ email: tempEmail, password: tempPassword, data: { ref_code: refCode } }),
+          signal: AbortSignal.timeout(40000) };
+        const d = proxyDispatcher(p); if (d) opts.dispatcher = d;
+        const r = await fetch(supaRoot + "/auth/v1/signup?redirect_to=https://gonka-api.org/", opts);
+        const j = await r.json().catch(() => null);
+        console.log(`[lyra] signup status=${r.status} via=proxy${tries}`);
+        if (r.status === 200 || r.status === 201) signed = true; // bukti sesungguhnya = login sesudah konfirmasi (langkah 3)
+        if (r.status === 429) _proxy429Set.add(p);
+      } catch (e) { console.log(`[lyra] signup via=proxy${tries} exception ${e && e.message ? e.message : "unknown"}`); }
+    }
+    if (!signed) { console.log("[lyra] signup gagal di semua proxy — gagal jujur, tanpa direct"); return null; }
+    // 2) Tunggu email konfirmasi di Mailporary + klik link (ekstraksi ketat, port dari script operator).
+    const link = await lyraReadConfirmLink(tempEmail, 120000);
+    if (!link) { console.log("[lyra] email konfirmasi tidak datang"); return null; }
+    try { await fetch(link, { headers: { "User-Agent": randUA() }, signal: AbortSignal.timeout(30000) }); } catch {}
+    // 3) Login (3x coba) — login yang membuktikan konfirmasi, bukan status redirect.
+    let atoken = null, uid = null;
+    for (let a = 0; a < 3 && !atoken; a++) {
+      try {
+        const lg = await fetch(supaRoot + "/auth/v1/token?grant_type=password", {
+          method: "POST", headers: { apikey: anon, "Content-Type": "application/json;charset=UTF-8", "User-Agent": randUA() },
+          body: JSON.stringify({ email: tempEmail, password: tempPassword }), signal: AbortSignal.timeout(20000) });
+        const lj = await lg.json().catch(() => null);
+        if (lg.ok && lj && lj.access_token) { atoken = lj.access_token; uid = lj.user && lj.user.id; }
+      } catch {}
+      if (!atoken && a < 2) await new Promise((res) => setTimeout(res, 4000));
+    }
+    if (!atoken || !uid) { console.log("[lyra] login gagal / belum terkonfirmasi"); return null; }
+    // 4) Ambil API key sk_ dari tabel api_keys (dibuat otomatis server); buat baru bila kosong.
+    const restHeaders = { apikey: anon, Authorization: "Bearer " + atoken };
+    const restUrl = supaRoot + "/rest/v1/api_keys?select=key,is_active,created_at&user_id=eq." + uid + "&order=created_at.asc";
+    let sk = null;
+    try {
+      const rk = await fetch(restUrl, { headers: restHeaders, signal: AbortSignal.timeout(20000) });
+      if (rk.ok) { const rows = await rk.json().catch(() => []); for (const row of Array.isArray(rows) ? rows : []) { if (row.key && row.is_active !== false) { sk = row.key; break; } } }
+      if (!sk) {
+        const rc = await fetch(supaRoot + "/rest/v1/api_keys", { method: "POST",
+          headers: { ...restHeaders, "Content-Type": "application/json", Prefer: "return=representation" },
+          body: JSON.stringify({ user_id: uid }), signal: AbortSignal.timeout(20000) });
+        if (rc.status === 200 || rc.status === 201) {
+          const rows = await rc.json().catch(() => []);
+          if (Array.isArray(rows) && rows[0] && rows[0].key) sk = rows[0].key;
+          if (!sk) {
+            const rk2 = await fetch(restUrl, { headers: restHeaders, signal: AbortSignal.timeout(20000) });
+            if (rk2.ok) { const rows2 = await rk2.json().catch(() => []); for (const row of Array.isArray(rows2) ? rows2 : []) { if (row.key && row.is_active !== false) { sk = row.key; break; } } }
+          }
+        }
+      }
+    } catch (e) { console.log("[lyra] ambil key exception", e && e.message); }
+    if (!sk) { console.log("[lyra] api key tidak didapat"); return null; }
+    // 5) Verifikasi key lewat /models di jalur fungsi chat.
+    let verified = false;
+    try {
+      const vr = await fetch(chatBase + "/models", { headers: { Authorization: "Bearer " + sk, "User-Agent": randUA() }, signal: AbortSignal.timeout(30000) });
+      verified = vr.ok;
+    } catch {}
+    console.log(`[lyra] auto-register ok, verified=${verified}`);
+    return { upstreamApiKey: sk, upstreamBaseUrl: provider.upstream_url, tempEmail, tempPassword, live: verified };
+  } catch (e) { console.log("[lyra] exception", e && e.message); return null; }
+}
+
 async function tryAutoRegisterOrion(provider) {
   // Orion (media): POST /api/auth/signup {email,password} -> {sessionToken, accessToken, user, credits}. Tanpa verifikasi, tanpa captcha.
   // Pola yang SAMA seperti Near: scrap proxy + UA acak dulu, direct hanya sebagai jalan terakhir.
@@ -938,6 +1123,12 @@ async function tryAutoRegister(provider, tempEmail, tempPassword) {
   if ((provider.brand_name || "").toLowerCase() === "orion") {
     const or = await tryAutoRegisterOrion(provider);
     if (or) return or;
+    return null;
+  }
+  // Lyra (Gratis): Supabase auth + konfirmasi Mailporary -> API key sk_ dari tabel api_keys.
+  if ((provider.brand_name || "").toLowerCase() === "lyra") {
+    const ly = await tryAutoRegisterLyra(provider);
+    if (ly) return ly;
     return null;
   }
   const tryFetch = async (url, opts, ms) => {
@@ -1070,6 +1261,8 @@ async function doHarvest({ userId, providerId, count }) {
   if (!models) models = [];
   // Stella: selalu pakai daftar bersih nama pendek (bukan daftar mentah upstream).
   if (provider && provider.brand_name === "Stella") { models = STELLA_PUBLIC_MODELS.slice(); source = "configured"; }
+  // Lyra: sama — selalu daftar publik pendek perintah operator, jangan daftar mentah upstream.
+  if (provider && provider.brand_name === "Lyra") { models = LYRA_MODELS.slice(); source = "configured"; }
   // Gratis tier: enforce max 2 models.
   if (tier && tier.max_models != null && models.length > tier.max_models) models = models.slice(0, tier.max_models);
   const logs = []; const keys = [];
@@ -1629,6 +1822,10 @@ app.post("/v1/chat/completions", async (req, res) => {
   // Stella: terjemahkan nama pendek publik -> id upstream sebelum diteruskan.
   if (provider && provider.brand_name === "Stella" && fwdBody.model && STELLA_MODEL_MAP[fwdBody.model]) {
     fwdBody = Object.assign({}, fwdBody); fwdBody.model = STELLA_MODEL_MAP[fwdBody.model];
+  }
+  // Lyra: terjemahkan nama pendek publik -> id upstream sebelum diteruskan.
+  if (provider && provider.brand_name === "Lyra" && fwdBody.model && LYRA_MODEL_MAP[fwdBody.model]) {
+    fwdBody = Object.assign({}, fwdBody); fwdBody.model = LYRA_MODEL_MAP[fwdBody.model];
   }
   // Failover: coba tiap upstream sampai berhasil (untuk Gratis gabungan).
   let lastError = null;
