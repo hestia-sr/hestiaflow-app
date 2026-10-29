@@ -27,10 +27,28 @@ async function load() {
   try { const st = await api("/api/public/settings"); SETTINGS = st; } catch {}
   try { const pool = await api("/api/public/pool"); POOL = pool; } catch {}
   const fb = $("#footBase"); if (fb) fb.textContent = SETTINGS.baseUrl || "https://api.hestia-gateway.id/v1";
+  startTicker();
   renderAuth();
   render();
   loadBansos();
   document.body.classList.add("loaded");
+}
+function startTicker() {
+  const band = $("#ticker"), txt = $("#tickerText");
+  if (!band || !txt) return;
+  const msg = (SETTINGS.announcement || "").trim();
+  if (!msg) { band.hidden = true; return; }
+  txt.textContent = msg;
+  band.hidden = false;
+  // Kecepatan tetap 40 px/detik; satu putaran = teks masuk dari kanan sampai
+  // keluar habis di kiri. Tepat 3 putaran, lalu pita disembunyikan.
+  const lebarBand = band.clientWidth, lebarTeks = txt.offsetWidth;
+  const durasi = ((lebarBand + lebarTeks) / 40) * 1000;
+  const anim = txt.animate(
+    [{ transform: `translateX(${lebarBand}px)` }, { transform: `translateX(${-lebarTeks}px)` }],
+    { duration: durasi, iterations: 3, easing: "linear" }
+  );
+  anim.onfinish = () => { band.hidden = true; };
 }
 function renderAuth() {
   const a = $("#authArea");
@@ -483,6 +501,7 @@ function renderAdminSections() {
     html = `<div id="sec-settings"><h3>Pengaturan Gateway</h3><div class="card"><div class="row">
       <div><label>Nama gateway</label><input id="setName" value="${esc(s.gateway_name || "HestiaFlow")}" /></div>
       <div><label>Base URL (dibagikan ke pengguna)</label><input id="setBase" value="${esc(s.base_url || SETTINGS.baseUrl)}" /></div></div>
+      <div style="margin-top:10px"><label>Pengumuman berjalan (tampil di atas halaman utama, berjalan 3 putaran — kosongkan untuk menyembunyikan)</label><input id="setAnnouncement" value="${esc(s.announcement_text || "")}" placeholder="cth: Update terbaru: tier Plus kini bisa dipanen!" /></div>
       <button class="btn btn-plum btn-sm" style="margin-top:10px" onclick="saveSettings()">Simpan Pengaturan</button></div></div>`;
   }
   if (adminSection === "voucher") {
@@ -541,7 +560,7 @@ async function setProviderKey(providerId) {
   } catch (e) { alert("Gagal menyimpan: " + e.message); }
 }
 async function saveSettings() {
-  await api("/api/admin/settings", { method: "PUT", body: JSON.stringify({ gateway_name: $("#setName").value, base_url: $("#setBase").value }) });
+  await api("/api/admin/settings", { method: "PUT", body: JSON.stringify({ gateway_name: $("#setName").value, base_url: $("#setBase").value, announcement_text: $("#setAnnouncement").value }) });
   alert("Pengaturan disimpan.");
   load();
 }
