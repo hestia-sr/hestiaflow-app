@@ -851,7 +851,7 @@ const MP_API = "https://web.mailporary.com/api/v1";
 const MP_FALLBACK_DOMAINS = ["suarj.com", "mfxis.com", "anogz.com", "jgkcr.com", "vbgvd.com", "wzjpj.com"];
 let _mpCache = { token: null, domains: null, at: 0 };
 async function mpRefresh() {
-  const r = await fetch("https://mailporary.com/id", { headers: { "User-Agent": randUA() }, signal: AbortSignal.timeout(20000) });
+  const r = await fetch("https://mailporary.com/id", { signal: AbortSignal.timeout(20000) });
   const html = await r.text();
   const m = html.match(/id="__NUXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
   if (!m) throw new Error("payload tidak ditemukan");
@@ -877,8 +877,7 @@ async function mpState() {
 }
 function mpHeaders(token) {
   return { Authorization: "Bearer " + token, "Content-Type": "application/json",
-    "X-Request-ID": crypto.randomBytes(16).toString("hex"), "X-Timestamp": String(Math.floor(Date.now() / 1000)),
-    "User-Agent": randUA() };
+    "X-Request-ID": crypto.randomBytes(16).toString("hex"), "X-Timestamp": String(Math.floor(Date.now() / 1000)) };
 }
 async function mpGet(p) {
   let st = await mpState();
@@ -922,9 +921,9 @@ async function tryAutoRegisterLyra(provider) {
   // Lyra (Gratis, 2026-10-29): daftar akun upstream via Supabase auth + konfirmasi email
   // Mailporary, lalu ambil API key asli (sk_) dari tabel api_keys via REST.
   // Alur TERBUKTI persis oleh script operator di hari yang sama (daftar -> konfirmasi ->
-  // login -> key sk_). Aturan anti-deteksi operator: signup WAJIB lewat proxy yang lolos
-  // cek hidup + UA acak + nama acak; tanpa proxy yang lolos, gagal jujur (null) —
-  // TIDAK ada fallback direct untuk signup.
+  // login -> key sk_). KEPUTUSAN OPERATOR 2026-10-29 (khusus Lyra/tier Gratis, menggantikan
+  // aturan proxy+UA umum): panen DIRECT tanpa proxy dan tanpa UA khusus — upstream ini
+  // bebas, sama seperti script Python operator yang jalan telanjang dari Termux.
   const chatBase = stripV1(provider.upstream_url || "");
   if (!chatBase) return null;
   const supaRoot = chatBase.replace(/\/functions\/v1\/[^/]+$/, "");
@@ -941,42 +940,28 @@ async function tryAutoRegisterLyra(provider) {
     tempEmail = local + "@" + st.domains[Math.floor(Math.random() * st.domains.length)];
   } catch (e) { console.log("[lyra] mailporary exception", e && e.message); return null; }
   try {
-    // 1) Signup lewat proxy hidup (maks 4 kali coba).
-    const proxies = await fetchProxyHidup(supaRoot);
+    // 1) Signup DIRECT (tanpa proxy, tanpa UA khusus — keputusan operator di atas).
     let signed = false;
-    const sudahCoba = new Set();
-    let tries = 0;
-    while (tries < 4 && !signed) {
-      const eligible = proxies.filter((x) => !_proxy429Set.has(x) && !sudahCoba.has(x));
-      if (!eligible.length) break;
-      const p = eligible[Math.floor(Math.random() * eligible.length)];
-      sudahCoba.add(p);
-      if (!(await cekProxyHidup(supaRoot, p))) continue;
-      tries++;
-      try {
-        const opts = { method: "POST",
-          headers: { apikey: anon, "Content-Type": "application/json;charset=UTF-8", "User-Agent": randUA() },
-          body: JSON.stringify({ email: tempEmail, password: tempPassword, data: { ref_code: refCode } }),
-          signal: AbortSignal.timeout(40000) };
-        const d = proxyDispatcher(p); if (d) opts.dispatcher = d;
-        const r = await fetch(supaRoot + "/auth/v1/signup?redirect_to=https://gonka-api.org/", opts);
-        const j = await r.json().catch(() => null);
-        console.log(`[lyra] signup status=${r.status} via=proxy${tries}`);
-        if (r.status === 200 || r.status === 201) signed = true; // bukti sesungguhnya = login sesudah konfirmasi (langkah 3)
-        if (r.status === 429) _proxy429Set.add(p);
-      } catch (e) { console.log(`[lyra] signup via=proxy${tries} exception ${e && e.message ? e.message : "unknown"}`); }
-    }
-    if (!signed) { console.log("[lyra] signup gagal di semua proxy — gagal jujur, tanpa direct"); return null; }
+    try {
+      const r = await fetch(supaRoot + "/auth/v1/signup?redirect_to=https://gonka-api.org/", { method: "POST",
+        headers: { apikey: anon, "Content-Type": "application/json;charset=UTF-8" },
+        body: JSON.stringify({ email: tempEmail, password: tempPassword, data: { ref_code: refCode } }),
+        signal: AbortSignal.timeout(40000) });
+      await r.json().catch(() => null);
+      console.log(`[lyra] signup status=${r.status} via=direct`);
+      if (r.status === 200 || r.status === 201) signed = true; // bukti sesungguhnya = login sesudah konfirmasi (langkah 3)
+    } catch (e) { console.log(`[lyra] signup exception ${e && e.message ? e.message : "unknown"}`); }
+    if (!signed) { console.log("[lyra] signup gagal"); return null; }
     // 2) Tunggu email konfirmasi di Mailporary + klik link (ekstraksi ketat, port dari script operator).
     const link = await lyraReadConfirmLink(tempEmail, 120000);
     if (!link) { console.log("[lyra] email konfirmasi tidak datang"); return null; }
-    try { await fetch(link, { headers: { "User-Agent": randUA() }, signal: AbortSignal.timeout(30000) }); } catch {}
+    try { await fetch(link, { signal: AbortSignal.timeout(30000) }); } catch {}
     // 3) Login (3x coba) — login yang membuktikan konfirmasi, bukan status redirect.
     let atoken = null, uid = null;
     for (let a = 0; a < 3 && !atoken; a++) {
       try {
         const lg = await fetch(supaRoot + "/auth/v1/token?grant_type=password", {
-          method: "POST", headers: { apikey: anon, "Content-Type": "application/json;charset=UTF-8", "User-Agent": randUA() },
+          method: "POST", headers: { apikey: anon, "Content-Type": "application/json;charset=UTF-8" },
           body: JSON.stringify({ email: tempEmail, password: tempPassword }), signal: AbortSignal.timeout(20000) });
         const lj = await lg.json().catch(() => null);
         if (lg.ok && lj && lj.access_token) { atoken = lj.access_token; uid = lj.user && lj.user.id; }
@@ -1009,7 +994,7 @@ async function tryAutoRegisterLyra(provider) {
     // 5) Verifikasi key lewat /models di jalur fungsi chat.
     let verified = false;
     try {
-      const vr = await fetch(chatBase + "/models", { headers: { Authorization: "Bearer " + sk, "User-Agent": randUA() }, signal: AbortSignal.timeout(30000) });
+      const vr = await fetch(chatBase + "/models", { headers: { Authorization: "Bearer " + sk }, signal: AbortSignal.timeout(30000) });
       verified = vr.ok;
     } catch {}
     console.log(`[lyra] auto-register ok, verified=${verified}`);
