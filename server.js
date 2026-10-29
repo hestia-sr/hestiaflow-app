@@ -151,6 +151,9 @@ function seed() {
     "Orion", "Gambar AI tanpa kartu, 200 kredit per akun.", 5,
     JSON.stringify(["flux", "gpt-image-2", "seedream", "gemini", "nano-banana-pro"]),
     JSON.stringify({}), "200 kredit per akun.", 200, 1);
+  // Migrasi video Orion (2026-10-29): daftar model Orion bertambah 10 id video.
+  // UPDATE unconditional (jalan tiap startup) agar DB live yang sudah punya baris Orion ikut berubah.
+  try { db.prepare("UPDATE providers SET model_count=?, model_list_json=?, tagline=? WHERE brand_name='Orion'").run(15, JSON.stringify(["flux", "gpt-image-2", "seedream", "gemini", "nano-banana-pro", "minimax", "luma", "wan", "kling", "veo-lite", "higgsfield-seedance", "kling-3.0", "kling-2.6", "veo-fast", "veo"]), "Gambar & video AI tanpa kartu, 200 kredit per akun."); } catch {}
   const tierCount = db.prepare("SELECT COUNT(*) c FROM tiers").get().c;
   if (tierCount > 0) return;
   const insTier = db.prepare("INSERT INTO tiers (slug,name,audience_label,badge,max_models,sort_order) VALUES (?,?,?,?,?,?)");
@@ -1717,6 +1720,20 @@ const ORION_IMAGE_MAP = {
   "gemini": "gemini",
   "nano-banana-pro": "nano-banana-pro",
 };
+// Orion (media): id model video memetakan ke provider video upstream
+// (higgsfield-seedance di katalog = provider higgsfield; sisanya identitas).
+const ORION_VIDEO_MAP = {
+  "minimax": "minimax",
+  "luma": "luma",
+  "wan": "wan",
+  "kling": "kling",
+  "veo-lite": "veo-lite",
+  "higgsfield-seedance": "higgsfield",
+  "kling-3.0": "kling-3.0",
+  "kling-2.6": "kling-2.6",
+  "veo-fast": "veo-fast",
+  "veo": "veo",
+};
 app.post("/v1/images/generations", async (req, res) => {
   const key = gatewayAuth(req);
   if (!key) return res.status(401).json({ error: { message: "Incorrect API key provided.", type: "invalid_request_error", param: null, code: "invalid_api_key" } });
@@ -1835,6 +1852,93 @@ app.post("/v1/images/generations", async (req, res) => {
   }
   if (!data.length) return res.status(502).json({ error: { message: "Generate gambar gagal. Coba lagi nanti. (" + (lastErr || "upstream") + ")", type: "upstream_error", param: null, code: "image_generation_failed" } });
   return res.json({ created: Math.floor(Date.now() / 1000), data });
+});
+
+// Orion (media): endpoint video sendiri — hasil berupa URL publik, proses async
+// (generate lalu poll job). Satu request = satu video; kandidat dicoba satu-satu
+// hanya sampai generate berhasil — setelah job dibuat, tidak ada coba kandidat
+// lain (job yang sudah dibuat kemungkinan sudah memakan kredit).
+app.post("/v1/videos/generations", async (req, res) => {
+  const key = gatewayAuth(req);
+  if (!key) return res.status(401).json({ error: { message: "Incorrect API key provided.", type: "invalid_request_error", param: null, code: "invalid_api_key" } });
+  if (key._pro_locked) return res.status(401).json({ error: { message: "Tier Pro sedang dalam perbaikan. Coba lagi nanti.", type: "invalid_request_error", param: null, code: "pro_locked" } });
+  if (key._expired) return res.status(401).json({ error: { message: "API key sudah kadaluarsa. Panen lagi atau upgrade paket!", type: "invalid_request_error", param: null, code: "key_expired" } });
+  const provider = key.provider_id ? db.prepare("SELECT * FROM providers WHERE id=?").get(key.provider_id) : null;
+  if (!provider || provider.brand_name !== "Orion") return res.status(403).json({ error: { message: "Generate video hanya untuk pengguna Media (Orion).", type: "invalid_request_error", param: null, code: "video_media_only" } });
+  const vBody = req.body || {};
+  const vPrompt = typeof vBody.prompt === "string" ? vBody.prompt.trim() : "";
+  if (!vPrompt) return res.status(400).json({ error: { message: "prompt is required.", type: "invalid_request_error", param: "prompt", code: "invalid_request" } });
+  const vModelIn = vBody.model || "minimax";
+  const vProvider = ORION_VIDEO_MAP[vModelIn];
+  if (!vProvider) return res.status(404).json({ error: { message: "Model video '" + vModelIn + "' tidak tersedia. Pilihan: minimax, luma, wan, kling, veo-lite, higgsfield-seedance, kling-3.0, kling-2.6, veo-fast, veo.", type: "invalid_request_error", param: "model", code: "model_not_found" } });
+  let vDur = parseInt(vBody.duration, 10);
+  if (!Number.isFinite(vDur) || vDur < 1) vDur = 5;
+  if (vDur > 10) vDur = 10;
+  const vImageUrl = typeof vBody.image_url === "string" ? vBody.image_url.trim() : "";
+  const vImageB64 = typeof vBody.image_base64 === "string" ? vBody.image_base64.trim() : "";
+  let vCandidates = [];
+  const vHas = db.prepare("SELECT upstream_api_key, upstream_base_url FROM harvested_accounts WHERE api_key_id=? AND upstream_api_key IS NOT NULL ORDER BY id ASC").all(key.id);
+  for (const h of vHas) vCandidates.push({ key: h.upstream_api_key, url: h.upstream_base_url || provider.upstream_url });
+  if (provider.upstream_url || provider.upstream_api_key) vCandidates.push({ key: provider.upstream_api_key, url: provider.upstream_url });
+  const vWk = db.prepare("SELECT * FROM workers WHERE provider_id=? AND status='active' AND upstream_api_key IS NOT NULL ORDER BY id LIMIT 1").get(provider.id);
+  if (vWk) vCandidates.push({ key: vWk.upstream_api_key, url: provider.upstream_url });
+  vCandidates = vCandidates.filter((c) => c.key && c.url);
+  if (!vCandidates.length) return res.status(502).json({ error: { message: "Upstream provider not configured. Operator must configure the provider upstream (Base URL + API key) in Panel Admin.", type: "upstream_error", param: null, code: "upstream_not_configured" } });
+  let vLastErr = null;
+  for (const cand of vCandidates) {
+    let jobId = null;
+    try {
+      const ctl = new AbortController();
+      const tmo = setTimeout(() => ctl.abort(), 120000);
+      let r, j;
+      try {
+        const vGenBody = { prompt: vPrompt, provider: vProvider, duration: vDur };
+        if (vImageB64) vGenBody.imageBase64 = vImageB64;
+        else if (vImageUrl) vGenBody.imageUrl = vImageUrl;
+        r = await fetch(cand.url.replace(/\/$/, "") + "/api/videos/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + cand.key, "User-Agent": "HestiaFlow/1.0" },
+          body: JSON.stringify(vGenBody),
+          signal: ctl.signal,
+        });
+        j = await r.json().catch(() => null);
+      } finally { clearTimeout(tmo); }
+      if (r.status === 401 || r.status === 402 || r.status === 403 || r.status === 429) { vLastErr = "Upstream " + r.status; continue; }
+      if (!r.ok || !j || !j.jobId) { vLastErr = (j && (j.error || j.message)) || "Upstream tidak mengembalikan job video."; continue; }
+      jobId = j.jobId;
+    } catch (e) { vLastErr = e && e.message; continue; }
+    const vBase = cand.url.replace(/\/$/, "");
+    const vStart = Date.now();
+    while (Date.now() - vStart < 600000) {
+      await new Promise((rr) => setTimeout(rr, 5000));
+      let r2, j2;
+      try {
+        const ctl2 = new AbortController();
+        const tmo2 = setTimeout(() => ctl2.abort(), 30000);
+        try {
+          r2 = await fetch(vBase + "/api/jobs/" + encodeURIComponent(jobId), {
+            headers: { Authorization: "Bearer " + cand.key, "User-Agent": "HestiaFlow/1.0" },
+            signal: ctl2.signal,
+          });
+          j2 = await r2.json().catch(() => null);
+        } finally { clearTimeout(tmo2); }
+      } catch (e) { return res.status(502).json({ error: { message: "Generate video gagal saat polling job. (" + (e && e.message) + ")", type: "upstream_error", param: null, code: "video_generation_failed" } }); }
+      if (!r2.ok || !j2) return res.status(502).json({ error: { message: "Generate video gagal saat polling job. (Upstream " + r2.status + ")", type: "upstream_error", param: null, code: "video_generation_failed" } });
+      const vSt = String(j2.status || "").toLowerCase();
+      if (vSt === "completed") {
+        const vOut = j2.output || {};
+        const vUrl = vOut.videoUrl || vOut.url || null;
+        if (vUrl) return res.json({ created: Math.floor(Date.now() / 1000), data: [{ url: vUrl }] });
+        return res.status(502).json({ error: { message: "Generate video gagal. Job selesai tanpa URL video.", type: "upstream_error", param: null, code: "video_generation_failed" } });
+      }
+      if (vSt === "failed" || vSt === "cancelled") {
+        const vErr = j2.error && (j2.error.message || j2.error);
+        return res.status(502).json({ error: { message: "Generate video gagal. (" + (vErr || "job gagal di upstream") + ")", type: "upstream_error", param: null, code: "video_job_failed" } });
+      }
+    }
+    return res.status(502).json({ error: { message: "Generate video belum selesai dalam 10 menit. Coba lagi nanti.", type: "upstream_error", param: null, code: "video_generation_timeout" } });
+  }
+  return res.status(502).json({ error: { message: "Generate video gagal. Coba lagi nanti. (" + (vLastErr || "upstream") + ")", type: "upstream_error", param: null, code: "video_generation_failed" } });
 });
 
 // SPA fallback

@@ -226,6 +226,16 @@ async function loadUser() {
     "size": "1:1"
   }'</pre></div>
       <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('curlOrionExample').innerText)">Salin</button></div>
+      <p class="muted" style="margin:10px 0 8px">Media (Orion) video: model minimax (termurah), hasil URL publik, proses async (tunggu sampai selesai).</p>
+      <div class="termbox" style="overflow:auto"><pre id="curlVideoExample" style="margin:0;white-space:pre;font-size:13px">curl https://hestiaflow.lovie.me/v1/videos/generations \
+  -H "Authorization: Bearer API_KEY_KAMU" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "minimax",
+    "prompt": "kucing oren melompat di taman",
+    "duration": 5
+  }'</pre></div>
+      <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('curlVideoExample').innerText)">Salin</button></div>
     </div>`;
   renderHarvestSidebar();
   updateModelBox();
