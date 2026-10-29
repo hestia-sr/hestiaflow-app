@@ -860,7 +860,13 @@ async function mpRefresh() {
   for (const item of payload) {
     if (item && typeof item === "object") {
       if ("mailServiceToken" in item) token = payload[item.mailServiceToken];
-      if ("$semailDomains" in item) domains = payload[item["$semailDomains"]];
+      if ("$semailDomains" in item) {
+        // Nilai $semailDomains = daftar INDEKS ke payload (format devalue) — wajib
+        // didereferensikan satu-satu jadi string domain (port persis dari script Python
+        // operator; tanpa ini email jadi "user@<angka>" dan konfirmasi tak pernah sampai).
+        const idxs = payload[item["$semailDomains"]];
+        if (Array.isArray(idxs)) domains = idxs.map((i) => payload[i]).filter((x) => typeof x === "string");
+      }
     }
   }
   if (!token) {
