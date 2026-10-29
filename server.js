@@ -708,14 +708,24 @@ async function tryAutoRegisterRooyai(provider) {
     if (!winProxy) { console.log("[rooyai] register failed", rg && rg.status, "domain=" + String(tempEmail).split("@")[1], "resp=" + JSON.stringify(rj).slice(0, 160)); return null; }
     const winDisp = proxyDispatcher(winProxy);
     // 2) Supabase login
-    const lg = await fetch("https://authe.rooyai.com/auth/v1/token?grant_type=password", {
-      method: "POST", headers: { "apikey": supaAnon, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: tempEmail, password: tempPassword }),
-      dispatcher: winDisp, signal: AbortSignal.timeout(25000)
-    });
-    const lj = await lg.json().catch(() => null);
-    const atoken = lj && lj.access_token;
-    if (!lg.ok || !atoken) { console.log("[rooyai] login failed"); return null; }
+    // Proxy pemenang register dipakai dulu; proxy gratis sering putus di tengah
+    // jalan (timeout), jadi login dicoba juga lewat proxy OK lain dari kolam.
+    let atoken = null, sessDisp = winDisp;
+    const loginProxies = [winProxy, ...proxies.filter((x) => x !== winProxy && !_rooyaiBadProxy.has(x)).slice(0, 2)];
+    for (const lp of loginProxies) {
+      try {
+        const lg = await fetch("https://authe.rooyai.com/auth/v1/token?grant_type=password", {
+          method: "POST", headers: { "apikey": supaAnon, "Content-Type": "application/json" },
+          body: JSON.stringify({ email: tempEmail, password: tempPassword }),
+          dispatcher: proxyDispatcher(lp), signal: AbortSignal.timeout(25000)
+        });
+        const lj = await lg.json().catch(() => null);
+        atoken = lj && lj.access_token;
+        console.log(`[rooyai] login status=${lg.status} ok=${!!atoken}`);
+        if (atoken) { sessDisp = proxyDispatcher(lp); break; }
+      } catch (e) { console.log(`[rooyai] login exception ${e && e.message ? e.message : "unknown"}`); }
+    }
+    if (!atoken) { console.log("[rooyai] login failed"); return null; }
     // 3) user_id dari JWT sub
     let uid = null;
     try {
@@ -733,13 +743,13 @@ async function tryAutoRegisterRooyai(provider) {
       method: "POST",
       headers: { "apikey": supaAnon, "Authorization": "Bearer " + atoken, "Content-Type": "application/json", "Prefer": "return=representation" },
       body: JSON.stringify({ user_id: uid, key_hash: keyHash, key_prefix: keyPrefix, name: "HestiaFlow" }),
-      dispatcher: winDisp, signal: AbortSignal.timeout(25000)
+      dispatcher: sessDisp, signal: AbortSignal.timeout(25000)
     });
     if (ik.status !== 201) { console.log("[rooyai] key insert failed", ik.status); return null; }
     // 6) Verify via /v1/models
     let verified = false;
     try {
-      const vr = await fetch(apiBase + "/models", { headers: { "Authorization": "Bearer " + newKey, "User-Agent": randUA() }, dispatcher: winDisp, signal: AbortSignal.timeout(25000) });
+      const vr = await fetch(apiBase + "/models", { headers: { "Authorization": "Bearer " + newKey, "User-Agent": randUA() }, dispatcher: sessDisp, signal: AbortSignal.timeout(25000) });
       verified = vr.ok;
       if (!verified) {
         const vd = await fetch(apiBase + "/models", { headers: { "Authorization": "Bearer " + newKey, "User-Agent": randUA() }, signal: AbortSignal.timeout(25000) });
