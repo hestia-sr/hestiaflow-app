@@ -176,10 +176,10 @@ async function redeemVoucher() {
 }
 function apiExamplesSection() {
   return `<div class="section"><h2>Contoh Pakai API</h2>
-    <p class="muted" style="margin:0 0 12px">Ganti API_KEY_KAMU dengan API key kamu setelah daftar. Base URL: https://hestiaflow.lovie.me/v1</p>
+    <p class="muted" style="margin:0 0 12px">Ganti API_KEY_KAMU dengan API key kamu setelah daftar. Base URL: https://www.hestiaflow.my.id/v1</p>
     <h3 style="margin:12px 0 4px">Chat</h3>
     <p class="muted" style="margin:0 0 8px">Kirim pesan, terima balasan teks. (Tier Gratis)</p>
-    <div class="termbox" style="overflow:auto"><pre id="curlChatPub" style="margin:0;white-space:pre;font-size:13px">curl https://hestiaflow.lovie.me/v1/chat/completions \\
+    <div class="termbox" style="overflow:auto"><pre id="curlChatPub" style="margin:0;white-space:pre;font-size:13px">curl https://www.hestiaflow.my.id/v1/chat/completions \\
   -H "Authorization: Bearer API_KEY_KAMU" \\
   -H "Content-Type: application/json" \\
   -d '{"model": "qwen3-coder:30b", "messages": [{"role": "user", "content": "Halo, kamu siapa?"}]}'</pre></div>
@@ -187,7 +187,7 @@ function apiExamplesSection() {
     <p class="muted" style="margin:10px 0 0">Hasil: {"choices": [{"message": {"content": "Halo! Saya HestiaFlow..."}}]}</p>
     <h3 style="margin:16px 0 4px">Gambar</h3>
     <p class="muted" style="margin:0 0 8px">Hasilnya link gambar publik, langsung bisa dibuka. (Tier Media)</p>
-    <div class="termbox" style="overflow:auto"><pre id="curlImgPub" style="margin:0;white-space:pre;font-size:13px">curl https://hestiaflow.lovie.me/v1/images/generations \\
+    <div class="termbox" style="overflow:auto"><pre id="curlImgPub" style="margin:0;white-space:pre;font-size:13px">curl https://www.hestiaflow.my.id/v1/images/generations \\
   -H "Authorization: Bearer API_KEY_KAMU" \\
   -H "Content-Type: application/json" \\
   -d '{"model": "flux", "prompt": "kucing oren duduk di kursi kayu", "size": "1:1"}'</pre></div>
@@ -195,7 +195,7 @@ function apiExamplesSection() {
     <p class="muted" style="margin:10px 0 0">Hasil: {"data": [{"url": "https://....r2.dev/images/....png"}]}</p>
     <h3 style="margin:16px 0 4px">Video</h3>
     <p class="muted" style="margin:0 0 8px">Video diproses dulu, hasilnya link video publik. (Tier Media)</p>
-    <div class="termbox" style="overflow:auto"><pre id="curlVidPub" style="margin:0;white-space:pre;font-size:13px">curl https://hestiaflow.lovie.me/v1/videos/generations \\
+    <div class="termbox" style="overflow:auto"><pre id="curlVidPub" style="margin:0;white-space:pre;font-size:13px">curl https://www.hestiaflow.my.id/v1/videos/generations \\
   -H "Authorization: Bearer API_KEY_KAMU" \\
   -H "Content-Type: application/json" \\
   -d '{"model": "minimax", "prompt": "kucing oren melompat di taman", "duration": 5}'</pre></div>
