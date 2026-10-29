@@ -206,7 +206,7 @@ async function loadUser() {
       <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="copyCurlExample(this)">Salin</button></div>
     </div>
     <div class="section"><h2>Curl Gambar</h2>
-      <p class="muted" style="margin:0 0 8px">Khusus pengguna Premium (Stella). Dukung potrait: pakai "size": "1024x1536" dan model gemini-3-pro-image.</p>
+      <p class="muted" style="margin:0 0 8px">Khusus pengguna Premium (Stella) dan Media (Orion). Stella: model gemini-3-pro-image, hasil base64, dukung potrait pakai "size": "1024x1536". Orion: model flux (termurah), hasil URL publik.</p>
       <div class="termbox" style="overflow:auto"><pre id="curlImageExample" style="margin:0;white-space:pre;font-size:13px">curl https://hestiaflow.lovie.me/v1/images/generations \
   -H "Authorization: Bearer API_KEY_KAMU" \
   -H "Content-Type: application/json" \
@@ -216,6 +216,16 @@ async function loadUser() {
     "size": "1024x1536"
   }'</pre></div>
       <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="copyImageCurlExample(this)">Salin</button></div>
+      <p class="muted" style="margin:10px 0 8px">Media (Orion): model flux, hasil URL publik.</p>
+      <div class="termbox" style="overflow:auto"><pre id="curlOrionExample" style="margin:0;white-space:pre;font-size:13px">curl https://hestiaflow.lovie.me/v1/images/generations \
+  -H "Authorization: Bearer API_KEY_KAMU" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "flux",
+    "prompt": "kucing oren duduk di kursi kayu",
+    "size": "1:1"
+  }'</pre></div>
+      <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('curlOrionExample').innerText)">Salin</button></div>
     </div>`;
   renderHarvestSidebar();
   updateModelBox();
@@ -273,13 +283,13 @@ async function deleteAdminKey(id, btn) {
   catch (e) { alert("Gagal hapus key: " + e.message); btn.disabled = false; btn.textContent = "Hapus Key"; btn.dataset.armed = ""; }
 }
 function clampCount(el) { let v = parseInt(el.value, 10); if (isNaN(v)) v = 1; el.value = Math.max(1, Math.min(50, v)); }
-const TIER_HARVEST_LIMIT = { gratis: 100, plus: 500, pro: 1500, premium: 5000 };
+const TIER_HARVEST_LIMIT = { gratis: 100, plus: 500, pro: 1500, premium: 5000, media: 500 };
 function userHarvestLimit() { const pid = Number(selectedHarvestProviderId); const item = TIERS.flatMap((t) => (t.providers || []).map((p) => ({ tier: t, p }))).find((x) => x.p.id === pid); return item ? (TIER_HARVEST_LIMIT[item.tier.slug] || 50) : 50; }
 function updateHarvestLimitUI() { const lim = userHarvestLimit(); const lbl = $("#harvestCountLabel"); if (lbl) lbl.textContent = `Jumlah akun (1–${lim})`; const el = $("#harvestCount"); if (el) { el.max = lim; el.value = Math.max(1, Math.min(lim, parseInt(el.value, 10) || 1)); } }
 function clampUserCount(el) { let v = parseInt(el.value, 10); if (isNaN(v)) v = 1; el.value = Math.max(1, Math.min(userHarvestLimit(), v)); }
 function stepCount(d) { const el = $("#harvestCount"); if (!el) return; el.value = Math.max(1, Math.min(userHarvestLimit(), (parseInt(el.value, 10) || 1) + d)); }
 let selectedHarvestProviderId = null;
-const TIER_RANK = { gratis: 0, plus: 1, pro: 2, premium: 3 };
+const TIER_RANK = { gratis: 0, plus: 1, pro: 2, premium: 3, media: 0 };
 function showTierLocked() {
   let m = $("#tierLockModal");
   if (!m) {
@@ -310,7 +320,7 @@ function showComingSoon() {
 function closeTierLocked() { const m = $("#tierLockModal"); if (m) m.style.display = "none"; }
 function renderHarvestSidebar() {
   const el = $("#harvestProviderSidebar"); if (!el) return;
-  const short = { gratis: "Gratis", plus: "Plus", pro: "Pro", premium: "Prem" };
+  const short = { gratis: "Gratis", plus: "Plus", pro: "Pro", premium: "Prem", media: "Media" };
   const items = [];
   TIERS.forEach((t) => (t.providers || []).forEach((p) => items.push({ tier: t, p })));
   if (!items.length) { el.innerHTML = `<p class="muted">Belum ada provider.</p>`; return; }
@@ -332,7 +342,7 @@ function selectHarvestProvider(pid) {
   selectedHarvestProviderId = pid;
   document.querySelectorAll(".tier-side-opt").forEach((d) => d.classList.toggle("sel", Number(d.dataset.pid) === pid));
   const pop = $("#harvestProviderSidebar"); if (pop) pop.style.display = "none";
-  const short = { gratis: "Gratis", plus: "Plus", pro: "Pro", premium: "Prem" };
+  const short = { gratis: "Gratis", plus: "Plus", pro: "Pro", premium: "Prem", media: "Media" };
   const cur = (TIERS.flatMap((t) => (t.providers || []).map((p) => ({ tier: t, p })))).find((x) => x.p.id === pid);
   const lbl = $("#tierPickerLabel"); if (lbl && cur) lbl.textContent = `${short[cur.tier.slug] || cur.tier.name} • ${cur.p.modelCount} Model`;
   updateHarvestLimitUI();

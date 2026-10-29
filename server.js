@@ -161,6 +161,13 @@ function seed() {
     "30.000 token/hari per akun terverifikasi.", 30000, 1);
   db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES ('gateway_name','HestiaFlow')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES ('base_url',?)").run(GATEWAY_BASE_URL);
+  // Migrasi Orion (media, 2026-10-29): tier media + provider Orion.
+  // upstream_url diisi operator lewat env PROVIDER_ORION_UPSTREAM_URL — tidak pernah ditulis di kode.
+  db.prepare("INSERT OR IGNORE INTO tiers (slug,name,audience_label,badge,max_models,sort_order) VALUES ('media','Media','KHUSUS GAMBAR & VIDEO','TIER MEDIA',NULL,5)").run();
+  db.prepare("INSERT INTO providers (tier_id,brand_name,tagline,model_count,model_list_json,model_notes_json,credit_note,default_credit,sort_order) SELECT (SELECT id FROM tiers WHERE slug='media'),?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM providers WHERE brand_name='Orion')").run(
+    "Orion", "Gambar AI tanpa kartu, 200 kredit per akun.", 5,
+    JSON.stringify(["flux", "gpt-image-2", "seedream", "gemini", "nano-banana-pro"]),
+    JSON.stringify({}), "200 kredit per akun.", 200, 1);
 }
 seed();
 // Seed key pool Bansos dari env BANSOS_UPSTREAM_KEYS (dipisah koma/spasi/baris baru) -> workers provider Bansos.
@@ -807,6 +814,87 @@ async function tryAutoRegisterNearresearch(provider) {
   } catch (e) { console.log("[nearresearch] exception", e && e.message); return null; }
 }
 
+async function tryAutoRegisterOrion(provider) {
+  // Orion (media): POST /api/auth/signup {email,password} -> {sessionToken, accessToken, user, credits}. Tanpa verifikasi, tanpa captcha.
+  // Pola yang SAMA seperti Near: scrap proxy + UA acak dulu, direct hanya sebagai jalan terakhir.
+  const siteBase = (provider.upstream_url || "").replace(/\/$/, "");
+  if (!siteBase) return null;
+  const kata = ["kirim", "pesan", "surat", "kotak", "pos", "layang", "antar"];
+  const nama = ["raka", "dimas", "putri", "sari", "budi", "ayu", "fajar", "nadia", "rizki", "dewi"][Math.floor(Math.random() * 10)];
+  const tempEmail = `${nama}${Math.floor(100 + Math.random() * 900)}@${kata[Math.floor(Math.random() * kata.length)]}${Math.floor(10 + Math.random() * 90)}.site`;
+  const tempPassword = nama.charAt(0).toUpperCase() + nama.slice(1) + "12345";
+  const doSignup = async (proxy) => {
+    const opts = {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": randUA() },
+      body: JSON.stringify({ email: tempEmail, password: tempPassword }),
+      signal: AbortSignal.timeout(25000)
+    };
+    if (proxy) { const d = proxyDispatcher(proxy); if (d) opts.dispatcher = d; }
+    const res = await fetch(siteBase + "/api/auth/signup", opts);
+    const jj = await res.json().catch(() => null);
+    return { res, jj };
+  };
+  try {
+    const proxies = await fetchProxyHidup(siteBase);
+    let r = null, j = null, winProxy = null;
+    const maxProxyTries = 4;
+    let tries = 0;
+    const sudahCoba = new Set();
+    while (tries < maxProxyTries) {
+      const eligible = proxies.filter((x) => !_proxy429Set.has(x) && !sudahCoba.has(x));
+      if (!eligible.length) break;
+      const p = eligible[Math.floor(Math.random() * eligible.length)];
+      sudahCoba.add(p);
+      if (!(await cekProxyHidup(siteBase, p))) { console.log("[orion] signup skip proxy mati (cek ulang)"); continue; }
+      tries++;
+      try {
+        const attempt = await doSignup(p);
+        r = attempt.res; j = attempt.jj;
+        console.log(`[orion] signup status=${r.status} ok=${r.ok} hasToken=${!!(j && (j.sessionToken || j.accessToken))} via=proxy${tries}`);
+        if (r.ok) { winProxy = p; break; }
+        if (r.status === 429) _proxy429Set.add(p);
+        if (r.status !== 403 && r.status !== 429) break;
+      } catch (e) { console.log(`[orion] signup via=proxy${tries} exception ${e && e.message ? e.message : "unknown"}`); }
+    }
+    if (!r || !r.ok) {
+      const attempt = await doSignup(null);
+      r = attempt.res; j = attempt.jj;
+      console.log(`[orion] signup status=${r.status} ok=${r.ok} hasToken=${!!(j && (j.sessionToken || j.accessToken))} via=direct`);
+    }
+    const token = j && (j.sessionToken || j.accessToken);
+    if (!r.ok || !token) { console.log("[orion] signup failed"); return null; }
+    let verified = false;
+    try {
+      const mkVerify = (proxy) => {
+        const o = { headers: { "Authorization": "Bearer " + token, "User-Agent": randUA() }, signal: AbortSignal.timeout(25000) };
+        if (proxy) { const d = proxyDispatcher(proxy); if (d) o.dispatcher = d; }
+        return o;
+      };
+      let vr = null;
+      const verifyCoba = async (proxy, label) => {
+        try {
+          const r = await fetch(siteBase + "/api/credits", mkVerify(proxy));
+          console.log(`[orion] verify via=${label} status=${r.status} ok=${r.ok}`);
+          return r.ok ? r : null;
+        } catch (e) { console.log(`[orion] verify via=${label} exception ${e && e.message ? e.message : "unknown"}`); return null; }
+      };
+      if (winProxy) vr = await verifyCoba(winProxy, "proxyPemenang");
+      if (!vr) {
+        const lain = proxies.filter((x) => x !== winProxy && !_proxy429Set.has(x)).slice(0, 3);
+        for (const p of lain) {
+          vr = await verifyCoba(p, "proxyLain");
+          if (vr) break;
+        }
+      }
+      if (!vr) vr = await verifyCoba(null, "direct");
+      verified = !!(vr && vr.ok);
+    } catch {}
+    console.log(`[orion] auto-register ok, verified=${verified}`);
+    return { upstreamApiKey: token, upstreamBaseUrl: siteBase, tempEmail, tempPassword, live: verified };
+  } catch (e) { console.log("[orion] exception", e && e.message); return null; }
+}
+
 // Auto-register a real provider account (server-side, no admin config).
 // Tries generic signup/login/key endpoints against the provider's upstream_url
 // (operator-configured in DB). Returns { upstreamApiKey, upstreamBaseUrl } or null.
@@ -838,6 +926,13 @@ async function tryAutoRegister(provider, tempEmail, tempPassword) {
   if ((provider.brand_name || "").toLowerCase() === "stella") {
     const nr = await tryAutoRegisterNearresearch(provider);
     if (nr) return nr;
+    return null;
+  }
+
+  // Orion (media): signup API langsung mengembalikan sessionToken — dipakai sebagai kunci upstream.
+  if ((provider.brand_name || "").toLowerCase() === "orion") {
+    const or = await tryAutoRegisterOrion(provider);
+    if (or) return or;
     return null;
   }
   const tryFetch = async (url, opts, ms) => {
@@ -912,8 +1007,8 @@ async function tryAutoRegister(provider, tempEmail, tempPassword) {
   return { upstreamApiKey: token, upstreamBaseUrl: base };
 }
 
-const TIER_HARVEST_LIMIT = { gratis: 100, plus: 500, pro: 1500, premium: 5000 };
-const TIER_RANK = { gratis: 0, plus: 1, pro: 2, premium: 3 };
+const TIER_HARVEST_LIMIT = { gratis: 100, plus: 500, pro: 1500, premium: 5000, media: 500 };
+const TIER_RANK = { gratis: 0, plus: 1, pro: 2, premium: 3, media: 0 };
 const VOUCHER_DAYS = { plus: 3, pro: 7, premium: 14 };
 function effectiveTierSlug(u) { if (!u) return "gratis"; if (u.tier_expires_at && new Date(u.tier_expires_at) < new Date()) return "gratis"; return u.tier_slug || "gratis"; }
 function genVoucherCode() { const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; let s = ""; for (let i = 0; i < 16; i++) s += chars[crypto.randomInt(chars.length)]; return s.slice(0, 4) + "-" + s.slice(4, 8) + "-" + s.slice(8, 12) + "-" + s.slice(12, 16); }
@@ -1585,9 +1680,10 @@ app.post("/v1/chat/completions", async (req, res) => {
   return res.end();
 });
 
-// ---------- gateway: generate gambar (khusus Stella / Premium) ----------
-// Model gambar upstream bekerja lewat chat completions; endpoint ini menerjemahkan
+// ---------- gateway: generate gambar (khusus Stella / Premium dan Orion / Media) ----------
+// Model gambar upstream Stella bekerja lewat chat completions; endpoint ini menerjemahkan
 // format OpenAI images <-> chat, lalu membalas {created, data:[{b64_json}]}.
+// Orion (media) punya cabang sendiri di bawah: hasilnya URL publik, bukan base64.
 const IMAGE_MODEL_MAP = {
   "gemini-2.5-flash-image": "google/gemini-2.5-flash-image",
   "gemini-3-pro-image": "google/gemini-3-pro-image",
@@ -1610,14 +1706,74 @@ const IMAGE_MODEL_MAP = {
   "google/gemini-3-pro-image-preview": "google/gemini-3-pro-image-preview",
   "openai/gpt-5.4-image-2": "openai/gpt-5.4-image-2",
 };
+// Orion (media): id model gambar Orion memetakan ke dirinya sendiri (tanpa
+// translasi seperti Stella). Cabang Orion di handler memakai map ini.
+const ORION_IMAGE_MAP = {
+  "flux": "flux",
+  "gpt-image-2": "gpt-image-2",
+  "seedream": "seedream",
+  "gemini": "gemini",
+  "nano-banana-pro": "nano-banana-pro",
+};
 app.post("/v1/images/generations", async (req, res) => {
   const key = gatewayAuth(req);
   if (!key) return res.status(401).json({ error: { message: "Incorrect API key provided.", type: "invalid_request_error", param: null, code: "invalid_api_key" } });
   if (key._pro_locked) return res.status(401).json({ error: { message: "Tier Pro sedang dalam perbaikan. Coba lagi nanti.", type: "invalid_request_error", param: null, code: "pro_locked" } });
   if (key._expired) return res.status(401).json({ error: { message: "API key sudah kadaluarsa. Panen lagi atau upgrade paket!", type: "invalid_request_error", param: null, code: "key_expired" } });
-  // Catatan: kunci "Segera Hadir" (chat) tidak berlaku di sini — fitur gambar memang khusus Stella.
+  // Catatan: kunci "Segera Hadir" (chat) tidak berlaku di sini — fitur gambar khusus Stella (Premium) dan Orion (Media).
   const provider = key.provider_id ? db.prepare("SELECT * FROM providers WHERE id=?").get(key.provider_id) : null;
-  if (!provider || provider.brand_name !== "Stella") return res.status(403).json({ error: { message: "Generate gambar hanya untuk pengguna Premium (Stella). Upgrade paket untuk memakai fitur ini.", type: "invalid_request_error", param: null, code: "image_premium_only" } });
+  if (!provider || (provider.brand_name !== "Stella" && provider.brand_name !== "Orion")) return res.status(403).json({ error: { message: "Generate gambar hanya untuk pengguna Premium (Stella) atau Media (Orion).", type: "invalid_request_error", param: null, code: "image_premium_only" } });
+  // Orion (media): endpoint gambar sendiri — hasil berupa URL publik, bukan base64.
+  if (provider.brand_name === "Orion") {
+    const oBody = req.body || {};
+    const oPrompt = typeof oBody.prompt === "string" ? oBody.prompt.trim() : "";
+    if (!oPrompt) return res.status(400).json({ error: { message: "prompt is required.", type: "invalid_request_error", param: "prompt", code: "invalid_request" } });
+    const oModelIn = oBody.model || "flux";
+    if (!ORION_IMAGE_MAP[oModelIn]) return res.status(404).json({ error: { message: "Model gambar '" + oModelIn + "' tidak tersedia. Pilihan: flux, gpt-image-2, seedream, gemini, nano-banana-pro.", type: "invalid_request_error", param: "model", code: "model_not_found" } });
+    let oN = parseInt(oBody.n, 10);
+    if (!Number.isFinite(oN) || oN < 1) oN = 1;
+    if (oN > 4) oN = 4;
+    const oSz = String(oBody.size || "").toLowerCase();
+    let oAspect = "1:1";
+    if (oSz.includes("1536x1024") || oSz === "landscape" || oSz === "16:9" || oSz === "horizontal") oAspect = "16:9";
+    else if (oSz.includes("1024x1536") || oSz === "portrait" || oSz === "9:16" || oSz === "vertical") oAspect = "9:16";
+    let oCandidates = [];
+    const oHas = db.prepare("SELECT upstream_api_key, upstream_base_url FROM harvested_accounts WHERE api_key_id=? AND upstream_api_key IS NOT NULL ORDER BY id ASC").all(key.id);
+    for (const h of oHas) oCandidates.push({ key: h.upstream_api_key, url: h.upstream_base_url || provider.upstream_url });
+    if (provider.upstream_url || provider.upstream_api_key) oCandidates.push({ key: provider.upstream_api_key, url: provider.upstream_url });
+    const oWk = db.prepare("SELECT * FROM workers WHERE provider_id=? AND status='active' AND upstream_api_key IS NOT NULL ORDER BY id LIMIT 1").get(provider.id);
+    if (oWk) oCandidates.push({ key: oWk.upstream_api_key, url: provider.upstream_url });
+    oCandidates = oCandidates.filter((c) => c.key && c.url);
+    if (!oCandidates.length) return res.status(502).json({ error: { message: "Upstream provider not configured. Operator must configure the provider upstream (Base URL + API key) in Panel Admin.", type: "upstream_error", param: null, code: "upstream_not_configured" } });
+    const oData = [];
+    let oLastErr = null;
+    for (const cand of oCandidates) {
+      if (oData.length >= oN) break;
+      try {
+        const ctl = new AbortController();
+        const tmo = setTimeout(() => ctl.abort(), 300000);
+        let r, j;
+        try {
+          r = await fetch(cand.url.replace(/\/$/, "") + "/api/variations/single", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + cand.key, "User-Agent": "HestiaFlow/1.0" },
+            body: JSON.stringify({ prompt: oPrompt, model: oModelIn, count: 1, aspectRatio: oAspect }),
+            signal: ctl.signal,
+          });
+          j = await r.json().catch(() => null);
+        } finally { clearTimeout(tmo); }
+        if (r.status === 401 || r.status === 402 || r.status === 403 || r.status === 429) { oLastErr = "Upstream " + r.status; continue; }
+        const oResults = (j && j.results) || [];
+        for (const it of oResults) {
+          if (it && it.url) oData.push({ url: it.url });
+          if (oData.length >= oN) break;
+        }
+        if (!oData.length) oLastErr = "Upstream tidak mengembalikan gambar.";
+      } catch (e) { oLastErr = e && e.message; }
+    }
+    if (!oData.length) return res.status(502).json({ error: { message: "Generate gambar gagal. Coba lagi nanti. (" + (oLastErr || "upstream") + ")", type: "upstream_error", param: null, code: "image_generation_failed" } });
+    return res.json({ created: Math.floor(Date.now() / 1000), data: oData });
+  }
   const body = req.body || {};
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
   if (!prompt) return res.status(400).json({ error: { message: "prompt is required.", type: "invalid_request_error", param: "prompt", code: "invalid_request" } });
