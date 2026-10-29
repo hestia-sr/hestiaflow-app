@@ -73,7 +73,7 @@ function render() {
     const urlParams = new URLSearchParams(location.search);
     const oauthNote = urlParams.get("oauth") === "missing"
       ? `<div class="notice"><strong>Login Google belum dikonfigurasi.</strong> Operator perlu mengatur GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET untuk domain ini.</div>` : "";
-    app.innerHTML = hero + oauthNote + tierShowcase() + bansosSection();
+    app.innerHTML = hero + oauthNote + tierShowcase() + bansosSection() + apiExamplesSection();
     return;
   }
   if (ME.is_admin && adminTab === "admin") {
@@ -174,6 +174,35 @@ async function redeemVoucher() {
   try { const r = await api("/api/voucher/redeem", { method: "POST", body: JSON.stringify({ code }) }); if (msg) msg.textContent = r.message || "Vocher berhasil ditukar."; setTimeout(() => location.reload(), 1500); }
   catch (e) { if (msg) msg.textContent = e.message; }
 }
+function apiExamplesSection() {
+  return `<div class="section"><h2>Contoh Pakai API</h2>
+    <p class="muted" style="margin:0 0 12px">Ganti API_KEY_KAMU dengan API key kamu setelah daftar. Base URL: https://hestiaflow.lovie.me/v1</p>
+    <h3 style="margin:12px 0 4px">Chat</h3>
+    <p class="muted" style="margin:0 0 8px">Kirim pesan, terima balasan teks. (Tier Gratis)</p>
+    <div class="termbox" style="overflow:auto"><pre id="curlChatPub" style="margin:0;white-space:pre;font-size:13px">curl https://hestiaflow.lovie.me/v1/chat/completions \\
+  -H "Authorization: Bearer API_KEY_KAMU" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model": "qwen3-coder:30b", "messages": [{"role": "user", "content": "Halo, kamu siapa?"}]}'</pre></div>
+    <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('curlChatPub').innerText)">Salin</button></div>
+    <p class="muted" style="margin:10px 0 0">Hasil: {"choices": [{"message": {"content": "Halo! Saya HestiaFlow..."}}]}</p>
+    <h3 style="margin:16px 0 4px">Gambar</h3>
+    <p class="muted" style="margin:0 0 8px">Hasilnya link gambar publik, langsung bisa dibuka. (Tier Media)</p>
+    <div class="termbox" style="overflow:auto"><pre id="curlImgPub" style="margin:0;white-space:pre;font-size:13px">curl https://hestiaflow.lovie.me/v1/images/generations \\
+  -H "Authorization: Bearer API_KEY_KAMU" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model": "flux", "prompt": "kucing oren duduk di kursi kayu", "size": "1:1"}'</pre></div>
+    <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('curlImgPub').innerText)">Salin</button></div>
+    <p class="muted" style="margin:10px 0 0">Hasil: {"data": [{"url": "https://....r2.dev/images/....png"}]}</p>
+    <h3 style="margin:16px 0 4px">Video</h3>
+    <p class="muted" style="margin:0 0 8px">Video diproses dulu, hasilnya link video publik. (Tier Media)</p>
+    <div class="termbox" style="overflow:auto"><pre id="curlVidPub" style="margin:0;white-space:pre;font-size:13px">curl https://hestiaflow.lovie.me/v1/videos/generations \\
+  -H "Authorization: Bearer API_KEY_KAMU" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model": "minimax", "prompt": "kucing oren melompat di taman", "duration": 5}'</pre></div>
+    <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('curlVidPub').innerText)">Salin</button></div>
+    <p class="muted" style="margin:10px 0 0">Hasil: {"data": [{"url": "https://....r2.dev/videos/....mp4"}]}</p>
+  </div>`;
+}
 async function loadUser() {
   try {
     $("#userRoot").innerHTML = `
@@ -194,63 +223,13 @@ async function loadUser() {
     <div class="section"><h2>Model</h2>
       <div class="termbox" id="modelBox" style="max-height:160px;overflow-y:auto"><div class="term-line">Memuat model…</div></div>
     </div>
-    <div class="section"><h2>Curl</h2>
-      <div class="termbox" style="overflow:auto"><pre id="curlExample" style="margin:0;white-space:pre;font-size:13px">curl https://hestiaflow.lovie.me/v1/chat/completions \
-  -H "Authorization: Bearer API_KEY_KAMU" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "qwen3-coder:30b",
-    "messages": [{"role": "user", "content": "Halo Saya Hestia Kamu siapa?"}],
-    "stream": false
-  }'</pre></div>
-      <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="copyCurlExample(this)">Salin</button></div>
-    </div>
-    <div class="section"><h2>Curl Gambar</h2>
-      <p class="muted" style="margin:0 0 8px">Khusus pengguna Premium (Stella) dan Media (Orion). Stella: model gemini-3-pro-image, hasil base64, dukung potrait pakai "size": "1024x1536". Orion: model flux (termurah), hasil URL publik.</p>
-      <div class="termbox" style="overflow:auto"><pre id="curlImageExample" style="margin:0;white-space:pre;font-size:13px">curl https://hestiaflow.lovie.me/v1/images/generations \
-  -H "Authorization: Bearer API_KEY_KAMU" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gemini-3-pro-image",
-    "prompt": "wanita anggun bergaun merah di taman bunga",
-    "size": "1024x1536"
-  }'</pre></div>
-      <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="copyImageCurlExample(this)">Salin</button></div>
-      <p class="muted" style="margin:10px 0 8px">Media (Orion): model flux, hasil URL publik.</p>
-      <div class="termbox" style="overflow:auto"><pre id="curlOrionExample" style="margin:0;white-space:pre;font-size:13px">curl https://hestiaflow.lovie.me/v1/images/generations \
-  -H "Authorization: Bearer API_KEY_KAMU" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "flux",
-    "prompt": "kucing oren duduk di kursi kayu",
-    "size": "1:1"
-  }'</pre></div>
-      <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('curlOrionExample').innerText)">Salin</button></div>
-      <p class="muted" style="margin:10px 0 8px">Media (Orion) video: model minimax (termurah), hasil URL publik, proses async (tunggu sampai selesai).</p>
-      <div class="termbox" style="overflow:auto"><pre id="curlVideoExample" style="margin:0;white-space:pre;font-size:13px">curl https://hestiaflow.lovie.me/v1/videos/generations \
-  -H "Authorization: Bearer API_KEY_KAMU" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "minimax",
-    "prompt": "kucing oren melompat di taman",
-    "duration": 5
-  }'</pre></div>
-      <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('curlVideoExample').innerText)">Salin</button></div>
-    </div>`;
+`;
   renderHarvestSidebar();
   updateModelBox();
   } catch (e) { $("#userRoot").innerHTML = `<p class="muted">Gagal memuat: ${esc(e.message)}</p>`; }
 }
 function keyBoxAll(keys) {
   return `<div class="keybox" style="margin-bottom:12px"><div class="lbl">API key HestiaFlow</div><div class="key-list-scroll">${keys.map((k) => `<div class="key-row"><span class="key-row-tag">${esc(k.tierSlug || "")} · ${esc(k.providerBrand || "")} · Credit: ${k.credit != null ? esc(k.credit) : "Tidak dinyatakan"}</span><span class="key-row-val">${esc(k.key)}</span><div style="display:flex;gap:6px;margin-top:4px"><button class="btn btn-ghost btn-sm" onclick="copyText('${esc(k.key)}',this)">Salin Key</button><button class="btn btn-ghost btn-sm" style="color:#b91c1c" onclick="deleteMyKey(${k.id},this)">Hapus</button></div></div>`).join("")}</div></div>`;
-}
-function copyCurlExample(btn) {
-  const el = document.getElementById("curlExample");
-  if (el) copyText(el.textContent, btn);
-}
-function copyImageCurlExample(btn) {
-  const el = document.getElementById("curlImageExample");
-  if (el) copyText(el.textContent, btn);
 }
 let lastHarvestKeys = [];
 function copyAllHarvestKeys(btn) {
