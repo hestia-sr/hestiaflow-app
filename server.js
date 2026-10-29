@@ -154,6 +154,8 @@ function seed() {
   db.prepare("UPDATE tiers SET badge=? WHERE slug=?").run("★ TIER PREMIUM", "premium");
   // Koreksi permanen: base_url lama (domain mati) diganti domain live.
   db.prepare("UPDATE settings SET value='https://hestiaflow.lovie.me/v1' WHERE key='base_url' AND value LIKE '%hestia-gateway.id%'").run();
+  // Koreksi permanen: base_url lovie.me diganti domain resmi www.hestiaflow.my.id.
+  db.prepare("UPDATE settings SET value='https://www.hestiaflow.my.id/v1' WHERE key='base_url' AND value LIKE '%lovie.me%'").run();
   // Migrasi Orion (media, 2026-10-29) — PERBAIKAN: blok ini HARUS di bagian migrasi
   // unconditional (jalan tiap startup), BUKAN di dalam seed() setelah early-return
   // tierCount (DB live tidak kosong → seed() berhenti sebelum mencapai blok ini).
