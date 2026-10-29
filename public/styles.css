@@ -226,3 +226,8 @@ button[style*="b91c1c"]{color:#1e293b !important}
 /* Cegah layar bisa digeser kanan-kiri (2026-10-29): overflow-x di body saja
    tidak cukup di browser HP — kunci juga di html. */
 html{overflow-x:hidden}
+
+/* Pita pengumuman berjalan (perintah Hestia 2026-10-29): teks dari panel admin,
+   berjalan kanan -> kiri 40 px/detik, tepat 3 putaran lalu pita disembunyikan. */
+.ticker{overflow:hidden;white-space:nowrap;padding:9px 0;background:var(--neu-bg);box-shadow:inset 0 2px 5px var(--neu-dark-sm), inset 0 -2px 5px var(--neu-light)}
+.ticker-text{display:inline-block;font-weight:700;font-size:15px;color:var(--plum);will-change:transform}

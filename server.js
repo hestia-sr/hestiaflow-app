@@ -1481,7 +1481,8 @@ app.get("/api/public/pool", (req, res) => {
 app.get("/api/public/settings", (req, res) => {
   const name = (db.prepare("SELECT value FROM settings WHERE key='gateway_name'").get() || {}).value || "HestiaFlow";
   const base = (db.prepare("SELECT value FROM settings WHERE key='base_url'").get() || {}).value || GATEWAY_BASE_URL;
-  res.json({ ok: true, gatewayName: name, baseUrl: base });
+  const ann = (db.prepare("SELECT value FROM settings WHERE key='announcement_text'").get() || {}).value || "";
+  res.json({ ok: true, gatewayName: name, baseUrl: base, announcement: ann });
 });
 
 // ---------- BANSOS TOKEN (tanpa login, maks 2 key per pengunjung) ----------
