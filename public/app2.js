@@ -49,12 +49,12 @@ const TIER_PRICE = { plus: { amount: "Rp 5.000", dur: "3 Hari" }, pro: { amount:
 function tierShowcase() {
   return `<div class="section"><h2>Pilihan Paket Tier</h2>
   <div class="grid tiers">${TIERS.map((t) => {
-    const isLockedCard = t.slug === "plus" || t.slug === "pro";
-    const cardClick = isLockedCard ? (t.slug === "pro" ? "showTierLocked()" : "showComingSoon()") : "";
+    const isLockedCard = t.locked === true;
+    const cardClick = isLockedCard ? "showComingSoon()" : "";
     return `
     <div class="card tier ${t.slug === "premium" ? "premium" : ""}${isLockedCard ? " locked-card" : ""}" ${isLockedCard ? `onclick="${cardClick}" style="cursor:pointer;position:relative;"` : ""}>
       ${isLockedCard ? `<div class="card-lock-overlay">🔒</div>` : ""}
-      <div class="tier-head"><span class="badge ${t.slug === "gratis" ? "gratis" : t.slug === "plus" ? "plus" : t.slug === "pro" ? "pro" : "premium"}">${esc(t.badge)}</span>${TIER_PRICE[t.slug] ? `<div class="tier-price"><div class="price">${TIER_PRICE[t.slug].amount}</div><div class="price-dur">${TIER_PRICE[t.slug].dur}</div></div>` : ""}</div>
+      <div class="tier-head"><span class="badge ${t.slug === "gratis" ? "gratis" : t.slug === "plus" ? "plus" : t.slug === "pro" ? "pro" : "premium"}">${esc(t.badge)}</span>${isLockedCard ? `<span class="chip">🔒 Segera Hadir</span>` : ""}${TIER_PRICE[t.slug] ? `<div class="tier-price"><div class="price">${TIER_PRICE[t.slug].amount}</div><div class="price-dur">${TIER_PRICE[t.slug].dur}</div></div>` : ""}</div>
       ${(t.providers || []).map((p) => `
         <div class="brand"><div class="medal ${t.slug === "premium" ? "gold" : ""}">${esc(p.brand.slice(0, 1))}</div>
         <div><h3>${esc(p.brand)}</h3><p>${esc(p.tagline || "")}</p></div></div>
@@ -337,9 +337,11 @@ function renderHarvestSidebar() {
   const myRank = TIER_RANK[(ME && ME.tier_slug) || "gratis"] ?? 0;
   // Tangga panen (aturan Hestia 2026-10-26): tiap paket panen tier-nya sendiri + semua tier di bawahnya.
   const canHarvest = (slug) => myRank >= (TIER_RANK[slug] ?? 0);
+  // KUNCI TOTAL (2026-10-29): Plus, Pro, Premium terkunci untuk semua — klik → notif Segera Hadir.
+  const canPick = (x) => canHarvest(x.tier.slug) && x.tier.locked !== true;
   const selItem = items.find((x) => x.p.id === selectedHarvestProviderId);
-  if (!selectedHarvestProviderId || !selItem || !canHarvest(selItem.tier.slug)) selectedHarvestProviderId = (items.find((x) => canHarvest(x.tier.slug)) || items[0]).p.id;
-  el.innerHTML = items.map((x) => { const ok = canHarvest(x.tier.slug); const isLocked = !ok; const clickFn = ok ? `selectHarvestProvider(${x.p.id})` : "showTierLocked()"; return `<div class="tier-side-opt${x.p.id === selectedHarvestProviderId ? " sel" : ""}${isLocked ? " locked" : ""}" data-pid="${x.p.id}" onclick="${clickFn}">${isLocked ? "🔒 " : ""}${esc(short[x.tier.slug] || x.tier.name)} • ${x.p.modelCount} Model</div>`; }).join("");
+  if (!selectedHarvestProviderId || !selItem || !canPick(selItem)) selectedHarvestProviderId = (items.find((x) => canPick(x)) || items[0]).p.id;
+  el.innerHTML = items.map((x) => { const ok = canPick(x); const isLocked = !ok; const clickFn = ok ? `selectHarvestProvider(${x.p.id})` : "showComingSoon()"; return `<div class="tier-side-opt${x.p.id === selectedHarvestProviderId ? " sel" : ""}${isLocked ? " locked" : ""}" data-pid="${x.p.id}" onclick="${clickFn}">${isLocked ? "🔒 " : ""}${esc(short[x.tier.slug] || x.tier.name)} • ${x.p.modelCount} Model</div>`; }).join("");
   const cur = items.find((x) => x.p.id === selectedHarvestProviderId);
   const lbl = $("#tierPickerLabel"); if (lbl && cur) lbl.textContent = `${short[cur.tier.slug] || cur.tier.name} • ${cur.p.modelCount} Model`;
   updateHarvestLimitUI();
@@ -349,6 +351,8 @@ function toggleTierPicker() {
   pop.style.display = pop.style.display === "none" ? "block" : "none";
 }
 function selectHarvestProvider(pid) {
+  const _t = (TIERS.flatMap((t) => (t.providers || []).map((p) => ({ tier: t, p })))).find((x) => x.p.id === pid);
+  if (_t && _t.tier.locked === true) { showComingSoon(); return; }
   selectedHarvestProviderId = pid;
   document.querySelectorAll(".tier-side-opt").forEach((d) => d.classList.toggle("sel", Number(d.dataset.pid) === pid));
   const pop = $("#harvestProviderSidebar"); if (pop) pop.style.display = "none";
