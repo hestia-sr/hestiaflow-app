@@ -153,7 +153,7 @@ function seed() {
     JSON.stringify({}), "200 kredit per akun.", 200, 1);
   // Migrasi video Orion (2026-10-29): daftar model Orion bertambah 10 id video.
   // UPDATE unconditional (jalan tiap startup) agar DB live yang sudah punya baris Orion ikut berubah.
-  try { db.prepare("UPDATE providers SET model_count=?, model_list_json=?, tagline=? WHERE brand_name='Orion'").run(15, JSON.stringify(["flux", "gpt-image-2", "seedream", "gemini", "nano-banana-pro", "minimax", "luma", "wan", "kling", "veo-lite", "higgsfield-seedance", "kling-3.0", "kling-2.6", "veo-fast", "veo"]), "Gambar & video AI tanpa kartu, 200 kredit per akun."); } catch {}
+  try { db.prepare("UPDATE providers SET model_count=?, model_list_json=?, tagline=?, model_notes_json=? WHERE brand_name='Orion'").run(15, JSON.stringify(["flux", "gpt-image-2", "seedream", "gemini", "nano-banana-pro", "minimax", "luma", "wan", "kling", "veo-lite", "higgsfield-seedance", "kling-3.0", "kling-2.6", "veo-fast", "veo"]), "Gambar & video AI tanpa kartu, 200 kredit per akun.", JSON.stringify({"flux": "Gambar · 12 kredit per gambar", "gpt-image-2": "Gambar · 25 kredit per gambar", "seedream": "Gambar · 35 kredit per gambar", "gemini": "Gambar · 40 kredit per gambar", "nano-banana-pro": "Gambar · 80 kredit per gambar", "minimax": "Video · 140 kredit per video", "luma": "Video · 150 kredit per video", "wan": "Video · 170 kredit per video", "kling": "Video · 175 kredit per video 5 detik (35 kredit/detik)", "veo-lite": "Video · 240 kredit per video 8 detik (30 kredit/detik)", "higgsfield-seedance": "Video · 300 kredit per video 5 detik (60 kredit/detik)", "kling-3.0": "Video · 400 kredit per video 5 detik (80 kredit/detik)", "kling-2.6": "Video · 425 kredit per video 5 detik (85 kredit/detik)", "veo-fast": "Video · 480 kredit per video 8 detik (60 kredit/detik)", "veo": "Video · 1.920 kredit per video 8 detik (240 kredit/detik)"})); } catch {}
   const tierCount = db.prepare("SELECT COUNT(*) c FROM tiers").get().c;
   if (tierCount > 0) return;
   const insTier = db.prepare("INSERT INTO tiers (slug,name,audience_label,badge,max_models,sort_order) VALUES (?,?,?,?,?,?)");
@@ -1178,7 +1178,9 @@ app.get("/api/public/providers/:id/models", (req, res) => {
   if (!p) return res.status(404).json({ ok: false, error: "provider_not_found" });
   let models = [];
   try { models = JSON.parse(p.model_list_json || "[]"); } catch { models = []; }
-  res.json({ ok: true, providerId: p.id, brand: p.brand_name, modelCount: p.model_count, models });
+  let notes = {};
+  try { notes = JSON.parse(p.model_notes_json || "{}"); } catch { notes = {}; }
+  res.json({ ok: true, providerId: p.id, brand: p.brand_name, modelCount: p.model_count, models, modelNotes: notes });
 });
 app.get("/api/public/tiers", (req, res) => {
   const tiers = db.prepare("SELECT * FROM tiers ORDER BY sort_order").all().map((t) => ({
