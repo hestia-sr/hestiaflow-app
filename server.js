@@ -1729,8 +1729,7 @@ function gatewayAuth(req) {
     try {
       const t = db.prepare("SELECT slug FROM tiers WHERE id=?").get(key.tier_id);
       if (t && t.slug === "pro") key._pro_locked = true;
-      // Plus masih "Segera Hadir".
-      if (t && t.slug === "plus") key._coming_soon = true;
+      // Plus DIBUKA lagi (2026-10-29 malam, perintah Hestia). Perbaikan: setter ini sempat tertimpa snapshot PR #35.
       // KUNCI TOTAL (2026-10-29, perintah Hestia): Premium Segera Hadir seperti Plus/Pro.
       if (t && t.slug === "premium") key._premium_locked = true;
       // KUNCI TOTAL (2026-10-29 malam, perintah Hestia): Media V2 dikunci dulu.
