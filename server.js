@@ -10,6 +10,10 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { DatabaseSync } = require("node:sqlite");
+// Pemrosesan gambar gateway (crop watermark Media V2). Muat opsional:
+// bila biner sharp tidak tersedia, hanya cabang Mira yang menolak — server tetap jalan.
+let sharp = null;
+try { sharp = require("sharp"); } catch { sharp = null; }
 
 const PORT = process.env.PORT || 3000;
 const BASE_URL = (process.env.BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
@@ -47,6 +51,10 @@ const STELLA_MODEL_MAP = {"nova-2-lite-v1": "amazon/nova-2-lite-v1", "nova-lite-
 const LYRA_MODELS = ["DeepSeek-V4-Flash", "MiniMax-M2.7", "GLM-5.3-Flash"];
 const LYRA_MODEL_MAP = { "DeepSeek-V4-Flash": "deepseek-ai/DeepSeek-V4-Flash-0731", "MiniMax-M2.7": "MiniMaxAI/MiniMax-M2.7", "GLM-5.3-Flash": "zai-org/GLM-5.3-Flash" };
 const LYRA_NOTES = { "DeepSeek-V4-Flash": "DeepSeek V4 Flash — kencang untuk chat dan coding.", "MiniMax-M2.7": "MiniMax M2.7 — ringan dan cepat.", "GLM-5.3-Flash": "GLM 5.3 Flash — reasoning ringan." };
+// MIRA (tier Media V2): katalog gambar saja — id publik = id upstream (nama model generik).
+// Harga per gambar dari katalog studio upstream (kredit); seedream-5-flash belum terpetakan -> tanpa angka.
+const MIRA_MODELS = ["z-image", "qwen-image-2-1", "nano-banana-2", "nano-banana-2-1", "nano-banana-2-lite", "nano-banana-pro", "gpt-image-2-5-flare", "gpt-image-2-5-sunburst", "gpt-image-2", "grok-imagine-image-2", "seedream-5-lite", "seedream-5-pro", "seedream-5-flash"];
+const MIRA_NOTES = { "z-image": "Gambar · 1 kredit per gambar", "qwen-image-2-1": "Gambar · 4 kredit (1K) / 8 kredit (2K) per gambar", "nano-banana-2": "Gambar · 3/4/5 kredit (1K/2K/4K) per gambar", "nano-banana-2-1": "Gambar · 3/4/5 kredit (1K/2K/4K) per gambar", "nano-banana-2-lite": "Gambar · 3 kredit per gambar", "nano-banana-pro": "Gambar · 6/7/8 kredit (1K/2K/4K) per gambar", "gpt-image-2-5-flare": "Gambar · mulai 3 kredit per gambar (sampai 35 di 4K kualitas tertinggi)", "gpt-image-2-5-sunburst": "Gambar · mulai 3 kredit per gambar (sampai 35 di 4K kualitas tertinggi)", "gpt-image-2": "Gambar · 6/10/16 kredit (1K/2K/4K) per gambar", "grok-imagine-image-2": "Gambar · 4 kredit per gambar", "seedream-5-lite": "Gambar · 4/5/6 kredit per gambar", "seedream-5-pro": "Gambar · 6/12 kredit per gambar", "seedream-5-flash": "Gambar · kredit mengikuti ukuran & resolusi" };
 function seed() {
   // Migrasi: tabel vouchers + users.tier_expires_at (masa berlaku paket dari vocher).
   db.prepare("CREATE TABLE IF NOT EXISTS vouchers (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, tier_slug TEXT, duration_days INTEGER, used INTEGER DEFAULT 0, used_by INTEGER, used_at TEXT, created_at TEXT DEFAULT (datetime('now')))").run();
@@ -181,6 +189,15 @@ function seed() {
       db.prepare("DELETE FROM providers WHERE id=?").run(lunaRow.id);
     }
   } catch {}
+  // Migrasi Mira (Media V2, 2026-10-29, perintah Hestia): tier BARU khusus gambar —
+  // TIDAK dicampur tier Media (Orion). Katalog 13 model gambar; video TIDAK dimasukkan
+  // (perintah Hestia: video terlalu mahal). upstream_url TIDAK ditulis di kode —
+  // diisi operator lewat env PROVIDER_MIRA_UPSTREAM_URL (sync env sesudah seed()).
+  db.prepare("INSERT OR IGNORE INTO tiers (slug,name,audience_label,badge,max_models,sort_order) VALUES ('media2','Media V2','KHUSUS GAMBAR','TIER MEDIA V2',NULL,6)").run();
+  db.prepare("INSERT INTO providers (tier_id,brand_name,tagline,model_count,model_list_json,model_notes_json,credit_note,default_credit,sort_order) SELECT (SELECT id FROM tiers WHERE slug='media2'),?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM providers WHERE brand_name='Mira')").run(
+    "Mira", "Gambar AI tanpa kartu, 18 kredit per akun + 15 tiap minggu.", 13, JSON.stringify(MIRA_MODELS), JSON.stringify(MIRA_NOTES), "18 kredit minggu pertama, lalu 15 kredit tiap minggu per akun.", 18, 1);
+  db.prepare("UPDATE providers SET tier_id=(SELECT id FROM tiers WHERE slug='media2'), tagline=?, model_count=?, model_list_json=?, model_notes_json=?, credit_note=?, default_credit=? WHERE brand_name='Mira'").run(
+    "Gambar AI tanpa kartu, 18 kredit per akun + 15 tiap minggu.", 13, JSON.stringify(MIRA_MODELS), JSON.stringify(MIRA_NOTES), "18 kredit minggu pertama, lalu 15 kredit tiap minggu per akun.", 18);
   const tierCount = db.prepare("SELECT COUNT(*) c FROM tiers").get().c;
   if (tierCount > 0) return;
   const insTier = db.prepare("INSERT INTO tiers (slug,name,audience_label,badge,max_models,sort_order) VALUES (?,?,?,?,?,?)");
@@ -232,7 +249,8 @@ for (const [k, v] of Object.entries(process.env)) {
 
 // ---------- helpers ----------
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+// Limit body diperbesar: input gambar base64 untuk image-to-image (Media V2).
+app.use(express.json({ limit: "12mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -1135,6 +1153,13 @@ async function tryAutoRegister(provider, tempEmail, tempPassword) {
     if (ly) return ly;
     return null;
   }
+  // Mira (Media V2): mesin panen BELUM tersedia — signup website dilindungi
+  // Cloudflare Turnstile + verifikasi kode email, dan API key dibuat dari dalam
+  // dashboard akun. Jangan jalankan penebak endpoint generik ke upstream ini;
+  // kembalikan null (gagal jujur, key terbit live=false).
+  if ((provider.brand_name || "").toLowerCase() === "mira") {
+    return null;
+  }
   const tryFetch = async (url, opts, ms) => {
     try {
       const ctl = new AbortController();
@@ -1207,8 +1232,8 @@ async function tryAutoRegister(provider, tempEmail, tempPassword) {
   return { upstreamApiKey: token, upstreamBaseUrl: base };
 }
 
-const TIER_HARVEST_LIMIT = { gratis: 100, plus: 500, pro: 1500, premium: 5000, media: 500 };
-const TIER_RANK = { gratis: 0, plus: 1, pro: 2, premium: 3, media: 0 };
+const TIER_HARVEST_LIMIT = { gratis: 100, plus: 500, pro: 1500, premium: 5000, media: 500, media2: 50 };
+const TIER_RANK = { gratis: 0, plus: 1, pro: 2, premium: 3, media: 0, media2: 0 };
 const VOUCHER_DAYS = { plus: 3, pro: 7, premium: 14 };
 function effectiveTierSlug(u) { if (!u) return "gratis"; if (u.tier_expires_at && new Date(u.tier_expires_at) < new Date()) return "gratis"; return u.tier_slug || "gratis"; }
 function genVoucherCode() { const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; let s = ""; for (let i = 0; i < 16; i++) s += chars[crypto.randomInt(chars.length)]; return s.slice(0, 4) + "-" + s.slice(4, 8) + "-" + s.slice(8, 12) + "-" + s.slice(12, 16); }
@@ -1948,7 +1973,7 @@ app.post("/v1/images/generations", async (req, res) => {
   if (key._expired) return res.status(401).json({ error: { message: "API key sudah kadaluarsa. Panen lagi atau upgrade paket!", type: "invalid_request_error", param: null, code: "key_expired" } });
   // KUNCI TOTAL (2026-10-29): Premium Segera Hadir — key Stella ditolak di sini, hanya Orion (Media) yang jalan.
   const provider = key.provider_id ? db.prepare("SELECT * FROM providers WHERE id=?").get(key.provider_id) : null;
-  if (!provider || (provider.brand_name !== "Stella" && provider.brand_name !== "Orion")) return res.status(403).json({ error: { message: "Generate gambar hanya untuk pengguna Premium (Stella) atau Media (Orion).", type: "invalid_request_error", param: null, code: "image_premium_only" } });
+  if (!provider || (provider.brand_name !== "Stella" && provider.brand_name !== "Orion" && provider.brand_name !== "Mira")) return res.status(403).json({ error: { message: "Generate gambar hanya untuk pengguna Premium (Stella), Media (Orion), atau Media V2.", type: "invalid_request_error", param: null, code: "image_premium_only" } });
   // Orion (media): endpoint gambar sendiri — hasil berupa URL publik, bukan base64.
   if (provider.brand_name === "Orion") {
     const oBody = req.body || {};
@@ -1999,6 +2024,91 @@ app.post("/v1/images/generations", async (req, res) => {
     }
     if (!oData.length) return res.status(502).json({ error: { message: "Generate gambar gagal. Coba lagi nanti. (" + (oLastErr || "upstream") + ")", type: "upstream_error", param: null, code: "image_generation_failed" } });
     return res.json({ created: Math.floor(Date.now() / 1000), data: oData });
+  }
+
+  // Mira (Media V2): API gambar OpenAI-compatible — hasil berupa URL bertanda
+  // tangan; gateway mengunduhnya, memotong strip watermark di bagian bawah
+  // (keputusan Hestia 2026-10-29), lalu menyajikan sebagai b64_json.
+  if (provider.brand_name === "Mira") {
+    const mBody = req.body || {};
+    const mPrompt = typeof mBody.prompt === "string" ? mBody.prompt.trim() : "";
+    if (!mPrompt) return res.status(400).json({ error: { message: "prompt is required.", type: "invalid_request_error", param: "prompt", code: "invalid_request" } });
+    const mModelIn = mBody.model || "z-image";
+    if (!MIRA_MODELS.includes(mModelIn)) return res.status(404).json({ error: { message: "Model gambar '" + mModelIn + "' tidak tersedia di Media V2.", type: "invalid_request_error", param: "model", code: "model_not_found" } });
+    let mN = parseInt(mBody.n, 10);
+    if (!Number.isFinite(mN) || mN < 1) mN = 1;
+    if (mN > 4) mN = 4;
+    // Parameter diteruskan HANYA bila pembeli mengisi (terbukti dari probe API
+    // 2026-10-29): tanpa aspect_ratio/resolution, tiap model memakai default-nya.
+    const mPayload = { model: mModelIn, prompt: mPrompt };
+    let mAspect = null;
+    if (typeof mBody.aspect_ratio === "string" && /^\d{1,2}:\d{1,2}$/.test(mBody.aspect_ratio.trim())) mAspect = mBody.aspect_ratio.trim();
+    else {
+      const mSz = String(mBody.size || "").toLowerCase();
+      if (mSz.includes("1536x1024") || mSz === "landscape" || mSz === "16:9" || mSz === "horizontal") mAspect = "16:9";
+      else if (mSz.includes("1024x1536") || mSz === "portrait" || mSz === "9:16" || mSz === "vertical") mAspect = "9:16";
+      else if (mSz.includes("1024x1024") || mSz === "1:1" || mSz === "square") mAspect = "1:1";
+    }
+    if (mAspect) mPayload.aspect_ratio = mAspect;
+    if (typeof mBody.resolution === "string" && ["1K", "2K", "4K"].includes(mBody.resolution.trim().toUpperCase())) mPayload.resolution = mBody.resolution.trim().toUpperCase();
+    if (typeof mBody.nsfw_checker === "boolean") mPayload.nsfw_checker = mBody.nsfw_checker;
+    // Image-to-image: teruskan input gambar pembeli apa adanya (pemetaan field
+    // upstream belum terverifikasi penuh — jangan dibungkus nama lain).
+    if (typeof mBody.image_url === "string" && mBody.image_url) mPayload.image_url = mBody.image_url;
+    if (typeof mBody.image === "string" && mBody.image) mPayload.image = mBody.image;
+    let mCandidates = [];
+    const mHas = db.prepare("SELECT upstream_api_key, upstream_base_url FROM harvested_accounts WHERE api_key_id=? AND upstream_api_key IS NOT NULL ORDER BY id ASC").all(key.id);
+    for (const h of mHas) mCandidates.push({ key: h.upstream_api_key, url: h.upstream_base_url || provider.upstream_url });
+    if (provider.upstream_url || provider.upstream_api_key) mCandidates.push({ key: provider.upstream_api_key, url: provider.upstream_url });
+    const mWk = db.prepare("SELECT * FROM workers WHERE provider_id=? AND status='active' AND upstream_api_key IS NOT NULL ORDER BY id LIMIT 1").get(provider.id);
+    if (mWk) mCandidates.push({ key: mWk.upstream_api_key, url: provider.upstream_url });
+    mCandidates = mCandidates.filter((c) => c.key && c.url);
+    if (!mCandidates.length) return res.status(502).json({ error: { message: "Upstream provider not configured. Operator must configure the provider upstream (Base URL + API key) in Panel Admin.", type: "upstream_error", param: null, code: "upstream_not_configured" } });
+    if (!sharp) return res.status(502).json({ error: { message: "Pemrosesan gambar di gateway tidak tersedia.", type: "upstream_error", param: null, code: "image_processing_unavailable" } });
+    const mData = [];
+    let mLastErr = null;
+    for (const cand of mCandidates) {
+      if (mData.length >= mN) break;
+      // Satu POST berbayar per gambar. Status 401/402/403/429 (auth/kuota) boleh
+      // pindah kandidat; error jaringan/timeout dan kegagalan unduh/crop TIDAK
+      // diulang ke kandidat lain (risiko tagihan ganda) — langsung lapor gagal.
+      while (mData.length < mN) {
+        let r, j;
+        const ctl = new AbortController();
+        const tmo = setTimeout(() => ctl.abort(), 300000);
+        try {
+          r = await fetch(cand.url.replace(/\/$/, "") + "/images/generations", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + cand.key, "User-Agent": "HestiaFlow/1.0" },
+            body: JSON.stringify(mPayload),
+            signal: ctl.signal,
+          });
+          j = await r.json().catch(() => null);
+        } catch (e) { return res.status(502).json({ error: { message: "Generate gambar gagal. Coba lagi nanti. (" + (e && e.message) + ")", type: "upstream_error", param: null, code: "image_generation_failed" } }); }
+        finally { clearTimeout(tmo); }
+        if (r.status === 401 || r.status === 402 || r.status === 403 || r.status === 429) { mLastErr = "Upstream " + r.status; break; }
+        if (r.status === 400) return res.status(400).json({ error: { message: "Permintaan gambar ditolak upstream (parameter tidak valid).", type: "invalid_request_error", param: null, code: "invalid_request" } });
+        if (r.status !== 200) return res.status(502).json({ error: { message: "Generate gambar gagal. Coba lagi nanti. (Upstream " + r.status + ")", type: "upstream_error", param: null, code: "image_generation_failed" } });
+        const mUrl = j && j.data && j.data[0] && j.data[0].url;
+        if (!mUrl) { mLastErr = "Upstream tidak mengembalikan gambar."; break; }
+        try {
+          const imgCtl = new AbortController();
+          const imgTmo = setTimeout(() => imgCtl.abort(), 120000);
+          let imgBuf;
+          try {
+            const ir = await fetch(mUrl, { signal: imgCtl.signal });
+            if (!ir.ok) throw new Error("download " + ir.status);
+            imgBuf = Buffer.from(await ir.arrayBuffer());
+          } finally { clearTimeout(imgTmo); }
+          const meta = await sharp(imgBuf).metadata();
+          const cropH = Math.max(1, Math.floor(meta.height * 0.91));
+          const outBuf = await sharp(imgBuf).extract({ left: 0, top: 0, width: meta.width, height: cropH }).toBuffer();
+          mData.push({ b64_json: outBuf.toString("base64") });
+        } catch (e) { return res.status(502).json({ error: { message: "Generate gambar gagal saat memproses hasil. (" + (e && e.message) + ")", type: "upstream_error", param: null, code: "image_generation_failed" } }); }
+      }
+    }
+    if (!mData.length) return res.status(502).json({ error: { message: "Generate gambar gagal. Coba lagi nanti. (" + (mLastErr || "upstream") + ")", type: "upstream_error", param: null, code: "image_generation_failed" } });
+    return res.json({ created: Math.floor(Date.now() / 1000), data: mData });
   }
   const body = req.body || {};
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
