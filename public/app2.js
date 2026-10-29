@@ -360,14 +360,14 @@ async function doUserHarvest() {
   const btn = $("#harvestBtn"); btn.disabled = true;
   const providerId = Number(selectedHarvestProviderId), count = Math.max(1, Math.min(userHarvestLimit(), parseInt($("#harvestCount").value, 10) || 1));
   const proc = $("#harvestProc"); proc.style.display = "block";
-  proc.innerHTML = `<div class="term-line" style="text-align:center;padding:12px 0 6px"><span class="neu-pill" role="status" aria-label="Lagi proses"><i></i><i></i><i></i></span></div><div class="term-line">Scrap Proxy...</div>`;
+  proc.innerHTML = `<div class="term-line" style="text-align:center;padding:12px 0 6px"><span class="neu-pill" role="status" aria-label="Lagi proses"><i></i><i></i><i></i></span></div>`;
   $("#harvestProg").style.width = "0%"; $("#harvestProgText").textContent = "";
   try {
     const out = await api("/api/harvest", { method: "POST", body: JSON.stringify({ providerId, count }) });
     $("#harvestProg").style.width = "100%"; $("#harvestProgText").textContent = `${out.count} dari ${count} akun berhasil dipanen`;
     const hTierSlug = (out.keys && out.keys[0] && out.keys[0].tierSlug) || "";
-    // Tier media tidak memakai proxy panen — baris Total Proxy OK disembunyikan (perintah Hestia 2026-10-29).
-    let html = (hTierSlug === "media" || hTierSlug === "media2") ? "" : `<div class="term-line">Total Proxy OK: ${out.proxyTotal != null ? out.proxyTotal : 0}</div>`;
+    // Baris Total Proxy OK dihilangkan untuk SEMUA tier (perintah Hestia 2026-10-29 malam).
+    let html = "";
     (out.keys || []).forEach((k, i) => {
       const st = k.live ? `<span class="term-live">Live</span>` : `<span class="term-dead">Mati</span>`;
       // Gratis: credit dalam cents, tampilkan sebagai $X.XX (perintah Hestia 2026-10-19).
