@@ -1073,9 +1073,10 @@ async function doHarvest({ userId, providerId, count }) {
   // Gratis tier: enforce max 2 models.
   if (tier && tier.max_models != null && models.length > tier.max_models) models = models.slice(0, tier.max_models);
   const logs = []; const keys = [];
-  // SEMUA tier: gabung N akun jadi 1 key (2026-10-26, perintah Hestia; sebelumnya cuma Gratis sejak 2026-10-18).
-  // 1 api_keys row, N harvested_accounts rows. Gateway failover otomatis.
-  {
+  // PISAH (2026-10-29, perintah Hestia, membalikkan aturan gabung 2026-10-26):
+  // tiap akun panen jadi 1 API key sendiri — 1 api_keys row + 1 harvested_accounts row per akun.
+  // Key lama yang sudah tergabung TIDAK diubah (tetap jalan seperti biasa).
+  for (let i = 1; i <= count; i++) {
     const keyValue = `hgw-${randHex(16)}`;
     const keyPrefix = keyValue.slice(0, 12);
     // Stempel mati 2 hari HANYA untuk panen tier Gratis oleh user paket-Gratis efektif.
@@ -1083,29 +1084,23 @@ async function doHarvest({ userId, providerId, count }) {
     const k = db.prepare("INSERT INTO api_keys (user_id,provider_id,tier_id,key_value,key_prefix,credit,models_json,model_source,model_count,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
       .run(userId, providerId, provider.tier_id, keyValue, keyPrefix, null, JSON.stringify(models), source, provider.model_count, expiresAt);
     const apiKeyId = k.lastInsertRowid;
-    let liveCount = 0;
-    let creditTotal = null;
-    for (let i = 1; i <= count; i++) {
-      const tempEmail = `hf_${randStr(10)}@hestiaflow.internal`;
-      const tempPassword = randStr(16, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
-      let auto = null;
-      try { auto = await tryAutoRegister(provider, tempEmail, tempPassword); } catch { auto = null; }
-      if (auto && auto.live) { liveCount++; if (provider.default_credit != null) creditTotal = (creditTotal || 0) + provider.default_credit; }
-      const storeEmail = (auto && auto.tempEmail) ? auto.tempEmail : tempEmail;
-      const storePass = (auto && auto.tempPassword) ? auto.tempPassword : tempPassword;
-      db.prepare("INSERT INTO harvested_accounts (api_key_id,user_id,provider_id,tier_id,temp_email,temp_password,upstream_api_key,upstream_base_url) VALUES (?,?,?,?,?,?,?,?)")
-        .run(apiKeyId, userId, providerId, provider.tier_id, storeEmail, storePass, auto ? auto.upstreamApiKey : null, auto ? auto.upstreamBaseUrl : null);
-      const msg = `Panen Akun ${i} Berhasil.`;
-      logHarvest(userId, providerId, msg);
-      logs.push(msg);
-    }
-    // Credit key gabungan = total credit semua akun Live (akun Live x credit per akun).
-    // Gratis tetap null: Luna tidak punya default_credit.
-    db.prepare("UPDATE api_keys SET credit=? WHERE id=?").run(creditTotal, apiKeyId);
-    keys.push({ id: apiKeyId, providerBrand: provider.brand_name, tierSlug: tier ? tier.slug : null, key: userId ? keyValue : undefined, keyPrefix, credit: creditTotal, models, modelSource: source, modelCount: provider.model_count, live: liveCount > 0, combinedAccounts: count, liveAccounts: liveCount });
-    return { count, logs, keys, proxyTotal: _proxyCache.list.length };
+    const tempEmail = `hf_${randStr(10)}@hestiaflow.internal`;
+    const tempPassword = randStr(16, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+    let auto = null;
+    try { auto = await tryAutoRegister(provider, tempEmail, tempPassword); } catch { auto = null; }
+    const live = !!(auto && auto.live);
+    const credit = (live && provider.default_credit != null) ? provider.default_credit : null;
+    const storeEmail = (auto && auto.tempEmail) ? auto.tempEmail : tempEmail;
+    const storePass = (auto && auto.tempPassword) ? auto.tempPassword : tempPassword;
+    db.prepare("INSERT INTO harvested_accounts (api_key_id,user_id,provider_id,tier_id,temp_email,temp_password,upstream_api_key,upstream_base_url) VALUES (?,?,?,?,?,?,?,?)")
+      .run(apiKeyId, userId, providerId, provider.tier_id, storeEmail, storePass, auto ? auto.upstreamApiKey : null, auto ? auto.upstreamBaseUrl : null);
+    db.prepare("UPDATE api_keys SET credit=? WHERE id=?").run(credit, apiKeyId);
+    const msg = `Panen Akun ${i} Berhasil.`;
+    logHarvest(userId, providerId, msg);
+    logs.push(msg);
+    keys.push({ id: apiKeyId, providerBrand: provider.brand_name, tierSlug: tier ? tier.slug : null, key: userId ? keyValue : undefined, keyPrefix, credit, models, modelSource: source, modelCount: provider.model_count, live });
   }
-
+  return { count, logs, keys, proxyTotal: _proxyCache.list.length };
 }
 
 // ---------- auth ----------
