@@ -679,7 +679,7 @@ async function tryAutoRegisterRooyai(provider) {
       body: JSON.stringify({ name: tempName, email: tempEmail, password: tempPassword })
     });
     const rj = await rg.json().catch(() => null);
-    if (!rg.ok || !rj || rj.success !== true) { console.log("[rooyai] register failed"); return null; }
+    if (!rg.ok || !rj || rj.success !== true) { console.log("[rooyai] register failed", rg.status, "domain=" + String(tempEmail).split("@")[1], "resp=" + JSON.stringify(rj).slice(0, 160)); return null; }
     // 2) Supabase login
     const lg = await fetch("https://authe.rooyai.com/auth/v1/token?grant_type=password", {
       method: "POST", headers: { "apikey": supaAnon, "Content-Type": "application/json" },
