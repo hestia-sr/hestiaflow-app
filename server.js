@@ -402,12 +402,12 @@ let _proxyOkCache = { site: "", list: [], at: 0 };
 // Host proxy yang sudah kena 429 (batas signup per jaringan) dalam jendela
 // cache ini — jangan diundi lagi, seperti penanda rute habis di script Python.
 let _proxy429Set = new Set();
-async function fetchProxyHidup(siteBase) {
+async function fetchProxyHidup(siteBase, targetOk = 10, maxKandidat = 60) {
   if (_proxyOkCache.site === siteBase && Date.now() - _proxyOkCache.at < 300000) return _proxyOkCache.list;
   const semua = await fetchProxyList();
-  const kandidat = [...semua].sort(() => Math.random() - 0.5).slice(0, 60);
+  const kandidat = [...semua].sort(() => Math.random() - 0.5).slice(0, maxKandidat);
   const hidup = [];
-  for (let i = 0; i < kandidat.length && hidup.length < 10; i += 10) {
+  for (let i = 0; i < kandidat.length && hidup.length < targetOk; i += 10) {
     const batch = kandidat.slice(i, i + 10);
     const hasil = await Promise.all(batch.map(async (x) => {
       try {
@@ -658,6 +658,9 @@ async function tryAutoRegisterNova(provider) {
 // 4. Generate key "sk-" + 32 alfanumerik, SHA-256 → key_hash, prefix 12 char
 // 5. POST https://authe.rooyai.com/rest/v1/api_keys {user_id,key_hash,key_prefix,name} → 201
 // Key plaintext (langkah 4) dipakai sebagai upstreamApiKey. Anon key Supabase = public (ada di JS frontend).
+// Proxy yang kena 403 "network restricted" dari upstream RooyAI — jangan diundi lagi.
+const _rooyaiBadProxy = new Set();
+
 async function tryAutoRegisterRooyai(provider) {
   const apiBase = "https://llm.rooyai.com/v1";
   const supaAnon = process.env.ROOYAI_SUPABASE_ANON_KEY || "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg3NzIzNDIwLCJleHAiOjIxMDMwODM0MjB9.g5QfJJ3tuQKZf4m3K-k1lO60ixpkP6-g1fqnMKgF-oI";
@@ -673,17 +676,42 @@ async function tryAutoRegisterRooyai(provider) {
       if (gj && gj.email && gj.email.address) tempEmail = gj.email.address;
     } catch {}
     if (!tempEmail) { console.log("[rooyai] tempmail generate failed"); return null; }
-    // 1) Register
-    const rg = await fetch("https://llm.rooyai.com/api/auth/register", {
-      method: "POST", headers: { "Content-Type": "application/json", "User-Agent": "HestiaFlow/1.0" },
-      body: JSON.stringify({ name: tempName, email: tempEmail, password: tempPassword })
-    });
-    const rj = await rg.json().catch(() => null);
-    if (!rg.ok || !rj || rj.success !== true) { console.log("[rooyai] register failed", rg.status, "domain=" + String(tempEmail).split("@")[1], "resp=" + JSON.stringify(rj).slice(0, 160)); return null; }
+    // 1) Register LEWAT PROXY (perintah Hestia 2026-10-29): IP server ditolak upstream
+    // (403 "Signups from this network have been restricted"). Kumpulkan proxy hidup ke
+    // upstream ini sampai 25 OK — yang mati dibuang otomatis — lalu langsung eksekusi.
+    const siteBase = "https://llm.rooyai.com";
+    const proxies = await fetchProxyHidup(siteBase, 25, 100);
+    console.log(`[rooyai] proxy OK terkumpul: ${proxies.length}`);
+    let rg = null, rj = null, winProxy = null;
+    const sudahCoba = new Set();
+    let tries = 0;
+    while (tries < 4) {
+      const eligible = proxies.filter((x) => !_rooyaiBadProxy.has(x) && !sudahCoba.has(x));
+      if (!eligible.length) break;
+      const p = eligible[Math.floor(Math.random() * eligible.length)];
+      sudahCoba.add(p);
+      if (!(await cekProxyHidup(siteBase, p))) continue;
+      tries++;
+      try {
+        rg = await fetch(siteBase + "/api/auth/register", {
+          method: "POST", headers: { "Content-Type": "application/json", "User-Agent": randUA() },
+          body: JSON.stringify({ name: tempName, email: tempEmail, password: tempPassword }),
+          dispatcher: proxyDispatcher(p), signal: AbortSignal.timeout(25000)
+        });
+        rj = await rg.json().catch(() => null);
+        console.log(`[rooyai] register status=${rg.status} via=proxy${tries}`);
+        if (rg.ok && rj && rj.success === true) { winProxy = p; break; }
+        if (rg.status === 403) _rooyaiBadProxy.add(p);
+        if (rg.status !== 403 && rg.status !== 429) break;
+      } catch (e) { console.log(`[rooyai] register via=proxy${tries} exception ${e && e.message ? e.message : "unknown"}`); rg = null; rj = null; }
+    }
+    if (!winProxy) { console.log("[rooyai] register failed", rg && rg.status, "domain=" + String(tempEmail).split("@")[1], "resp=" + JSON.stringify(rj).slice(0, 160)); return null; }
+    const winDisp = proxyDispatcher(winProxy);
     // 2) Supabase login
     const lg = await fetch("https://authe.rooyai.com/auth/v1/token?grant_type=password", {
       method: "POST", headers: { "apikey": supaAnon, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: tempEmail, password: tempPassword })
+      body: JSON.stringify({ email: tempEmail, password: tempPassword }),
+      dispatcher: winDisp, signal: AbortSignal.timeout(25000)
     });
     const lj = await lg.json().catch(() => null);
     const atoken = lj && lj.access_token;
@@ -704,14 +732,19 @@ async function tryAutoRegisterRooyai(provider) {
     const ik = await fetch("https://authe.rooyai.com/rest/v1/api_keys", {
       method: "POST",
       headers: { "apikey": supaAnon, "Authorization": "Bearer " + atoken, "Content-Type": "application/json", "Prefer": "return=representation" },
-      body: JSON.stringify({ user_id: uid, key_hash: keyHash, key_prefix: keyPrefix, name: "HestiaFlow" })
+      body: JSON.stringify({ user_id: uid, key_hash: keyHash, key_prefix: keyPrefix, name: "HestiaFlow" }),
+      dispatcher: winDisp, signal: AbortSignal.timeout(25000)
     });
     if (ik.status !== 201) { console.log("[rooyai] key insert failed", ik.status); return null; }
     // 6) Verify via /v1/models
     let verified = false;
     try {
-      const vr = await fetch(apiBase + "/models", { headers: { "Authorization": "Bearer " + newKey, "User-Agent": "HestiaFlow/1.0" } });
+      const vr = await fetch(apiBase + "/models", { headers: { "Authorization": "Bearer " + newKey, "User-Agent": randUA() }, dispatcher: winDisp, signal: AbortSignal.timeout(25000) });
       verified = vr.ok;
+      if (!verified) {
+        const vd = await fetch(apiBase + "/models", { headers: { "Authorization": "Bearer " + newKey, "User-Agent": randUA() }, signal: AbortSignal.timeout(25000) });
+        verified = vd.ok;
+      }
     } catch {}
     console.log(`[rooyai] auto-register ok, verified=${verified}`);
     return { upstreamApiKey: newKey, upstreamBaseUrl: apiBase, tempEmail, tempPassword, live: verified };
