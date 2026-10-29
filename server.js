@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 `);
 
 // ---------- seed ----------
-const AURORA_MODELS = ["deepseek-v3.1","deepseek-v3.2","deepseek-v4-flash","deepseek-v4-pro","gemma-4-31b-it","gemma-4-31B-it","google/gemini-3-flash-preview","google/gemini-3.1-flash-lite","google/gemini-embedding-001","gpt-4o-mini","gpt-oss-120b","llama-3.3-70b-versatile","mimo-v2.5","mimo-v2.5-pro","minimax-m2.7","moonshotai.kimi-k2.5","moonshotai/kimi-k2.6","nano-banana-2","nano-banana-2-lite","nano-banana-pro","omni-flash","qwen3.8-max","S1-Base-Pro","veo-3.1-fast","veo-3.1-lite","veo-3.1-quality","whisper-large-v3","whisper-large-v3-turbo","xai/grok-imagine-image","rooyai-image"];
+const AURORA_MODELS = ["deepseek-v3.1","deepseek-v3.2","deepseek-v4-flash","deepseek-v4-pro","gemma-4-31b-it","gemma-4-31B-it","google/gemini-3-flash-preview","google/gemini-3.1-flash-lite","google/gemini-embedding-001","gpt-4o-mini","gpt-oss-120b","llama-3.3-70b-versatile","mimo-v2.5","mimo-v2.5-pro","minimax-m2.7","moonshotai.kimi-k2.5","moonshotai/kimi-k2.6","nano-banana-2","nano-banana-2-lite","nano-banana-pro","omni-flash","qwen3.8-max","S1-Base-Pro","veo-3.1-fast","veo-3.1-lite","veo-3.1-quality","whisper-large-v3","whisper-large-v3-turbo","xai/grok-imagine-image"];
 // Model Stella (Premium) versi bersih - hasil scan live 26 Okt 2026: HANYA model yang
 // terbukti menjawab chat, ditampilkan dengan nama PENDEK tanpa prefix vendor (perintah Hestia).
 // STELLA_MODEL_MAP menerjemahkan nama pendek -> id upstream (server-side saja).
@@ -108,7 +108,7 @@ function seed() {
   db.prepare("UPDATE providers SET model_count=?, model_list_json=?, model_notes_json=?, credit_note=?, default_credit=? WHERE brand_name=?").run(2, JSON.stringify(["qwen3-coder:30b","llama3.2:3b"]), JSON.stringify({"qwen3-coder:30b":"Muncul di website provider. Chat terverifikasi jalan.","llama3.2:3b":"Terdaftar di /v1/models. Tes chat gagal (service_unavailable)."}), "Always-free BETA", null, "Luna");
   // Migrasi 2026-10-18: Aurora GANTI jadi RooyAI (brand tetap "Aurora", provider di baliknya RooyAI).
   // 30 model (terverifikasi via /v1/models + chat). $0.20 per akun. Auto-register via Supabase (no verifikasi).
-  db.prepare("UPDATE providers SET model_count=?, model_list_json=?, model_notes_json=?, credit_note=?, default_credit=? WHERE brand_name=?").run(30, JSON.stringify(AURORA_MODELS), JSON.stringify({}), "$0.20 per akun terverifikasi.", 200000, "Aurora");
+  db.prepare("UPDATE providers SET model_count=?, model_list_json=?, model_notes_json=?, credit_note=?, default_credit=? WHERE brand_name=?").run(29, JSON.stringify(AURORA_MODELS), JSON.stringify({}), "$0.20 per akun terverifikasi.", 200000, "Aurora");
   // Migrasi 2026-10-18: Luna GANTI jadi Zerolimit (ZeroLimitAI + bestllmapi.com) untuk tier Gratis.
   // 6 model (5 ZeroLimitAI :free + 1 bestllmapi.com "uncensored"). 100 calls/hari, 7 hari per akun. Auto-register full otomatis (no verifikasi email).
   db.prepare("UPDATE providers SET brand_name=?, tagline=?, model_count=?, model_list_json=?, model_notes_json=?, credit_note=?, default_credit=?, upstream_url=? WHERE brand_name IN ('Luna','Zerolimit')").run(
@@ -211,7 +211,7 @@ function seed() {
     JSON.stringify(["qwen3-coder:30b", "llama3.2:3b"]),
     JSON.stringify({ "qwen3-coder:30b": "Muncul di website provider. Chat terverifikasi jalan.", "llama3.2:3b": "Terdaftar di /v1/models. Tes chat gagal (service_unavailable)." }),
     "Always-free BETA", null, 1);
-  insProv.run(p, "Aurora", "Cahaya pertama di gerbang kecerdasan.", 30,
+  insProv.run(p, "Aurora", "Cahaya pertama di gerbang kecerdasan.", 29,
     JSON.stringify(AURORA_MODELS), JSON.stringify({}),
     "$0.20 per akun terverifikasi.", 200000, 1);
   insProv.run(pr, "Stella", "Bintang paling terang di langit HestiaFlow.", 514,
@@ -1258,7 +1258,7 @@ async function doHarvest({ userId, providerId, count }) {
   if (!Number.isInteger(count) || count < 1 || count > 5000) throw new Error("count_must_be_1_to_5000");
   const tier = db.prepare("SELECT * FROM tiers WHERE id=?").get(provider.tier_id);
   // KUNCI TOTAL (2026-10-29, perintah Hestia): Plus, Pro, Premium Segera Hadir — panen ditolak untuk semua, termasuk admin.
-  if (tier && ["pro", "premium", "media2"].includes(tier.slug)) throw new Error("Tier " + (tier.name || tier.slug) + " sedang dikunci (Segera Hadir).");
+  if (tier && ["plus", "pro", "premium", "media2"].includes(tier.slug)) throw new Error("Tier " + (tier.name || tier.slug) + " sedang dikunci (Segera Hadir).");
   // Tangga panen (aturan Hestia 2026-10-26): tiap paket panen tier-nya SENDIRI + semua tier di bawahnya
   // (Plus: Plus+Gratis · Pro: Pro+Plus+Gratis · Premium: Premium+Pro+Plus+Gratis).
   // Penegakannya = cek peringkat di bawah ini; tidak ada kunci khusus per tier lagi.
@@ -1418,7 +1418,7 @@ app.get("/api/public/providers/:id/models", (req, res) => {
 });
 app.get("/api/public/tiers", (req, res) => {
   const tiers = db.prepare("SELECT * FROM tiers ORDER BY sort_order").all().map((t) => ({
-    id: t.id, slug: t.slug, name: t.name, audienceLabel: t.audience_label, badge: t.badge, maxModels: t.max_models, locked: ["pro", "premium", "media2"].includes(t.slug),
+    id: t.id, slug: t.slug, name: t.name, audienceLabel: t.audience_label, badge: t.badge, maxModels: t.max_models, locked: ["plus", "pro", "premium", "media2"].includes(t.slug),
     providers: db.prepare("SELECT * FROM providers WHERE tier_id=? ORDER BY sort_order").all(t.id).map(publicProvider),
   }));
   res.json({ ok: true, tiers });
@@ -1516,7 +1516,7 @@ app.post("/api/voucher/redeem", requireAuth, (req, res) => {
   if (!v) return res.status(404).json({ ok: false, error: "Kode vocher tidak ditemukan." });
   if (v.used) return res.status(400).json({ ok: false, error: "Kode vocher sudah dipakai." });
   // KUNCI TOTAL (2026-10-29): vocher tier terkunci tidak bisa ditukar (dicek SEBELUM vocher ditandai terpakai).
-  if (["pro", "premium", "media2"].includes(v.tier_slug)) return res.status(400).json({ ok: false, error: "Tier ini sedang dikunci (Segera Hadir)." });
+  if (["plus", "pro", "premium", "media2"].includes(v.tier_slug)) return res.status(400).json({ ok: false, error: "Tier ini sedang dikunci (Segera Hadir)." });
   const expires = new Date(Date.now() + (v.duration_days || 0) * 86400000).toISOString();
   db.prepare("UPDATE vouchers SET used=1, used_by=?, used_at=datetime('now') WHERE id=?").run(req.user.id, v.id);
   db.prepare("UPDATE users SET tier_slug=?, tier_expires_at=? WHERE id=?").run(v.tier_slug, expires, req.user.id);
@@ -1729,7 +1729,8 @@ function gatewayAuth(req) {
     try {
       const t = db.prepare("SELECT slug FROM tiers WHERE id=?").get(key.tier_id);
       if (t && t.slug === "pro") key._pro_locked = true;
-      // Plus DIBUKA lagi (2026-10-29 malam, perintah Hestia).
+      // Plus masih "Segera Hadir".
+      if (t && t.slug === "plus") key._coming_soon = true;
       // KUNCI TOTAL (2026-10-29, perintah Hestia): Premium Segera Hadir seperti Plus/Pro.
       if (t && t.slug === "premium") key._premium_locked = true;
       // KUNCI TOTAL (2026-10-29 malam, perintah Hestia): Media V2 dikunci dulu.
