@@ -163,11 +163,24 @@ function seed() {
   // diisi operator lewat env PROVIDER_LYRA_UPSTREAM_URL (sync env sesudah seed()).
   // Katalog 3 model nama publik pendek (perintah Hestia); peta ke id upstream di LYRA_MODEL_MAP.
   db.prepare("INSERT INTO providers (tier_id,brand_name,tagline,model_count,model_list_json,model_notes_json,credit_note,default_credit,sort_order) SELECT (SELECT id FROM tiers WHERE slug='gratis'),?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM providers WHERE brand_name='Lyra')").run(
-    "Lyra", "3 model gratis untuk semua.", 3, JSON.stringify(LYRA_MODELS), JSON.stringify(LYRA_NOTES), "20 juta token per akun.", 20000000, 2);
+    "Lyra", "Gratis Selamanya", 3, JSON.stringify(LYRA_MODELS), JSON.stringify(LYRA_NOTES), "Gratis Selamanya", 20000000, 2);
   db.prepare("UPDATE providers SET tier_id=(SELECT id FROM tiers WHERE slug='gratis'), tagline=?, model_count=?, model_list_json=?, model_notes_json=?, credit_note=?, default_credit=? WHERE brand_name='Lyra'").run(
-    "3 model gratis untuk semua.", 3, JSON.stringify(LYRA_MODELS), JSON.stringify(LYRA_NOTES), "20 juta token per akun.", 20000000);
-  // Tier Gratis harus muat katalog 3 model (Lyra). Luna hanya berisi 2 model jadi tidak ikut berubah.
+    "Gratis Selamanya", 3, JSON.stringify(LYRA_MODELS), JSON.stringify(LYRA_NOTES), "Gratis Selamanya", 20000000);
+  // Tier Gratis harus muat katalog 3 model (Lyra).
   db.prepare("UPDATE tiers SET max_models=? WHERE slug=?").run(3, "gratis");
+  // Migrasi 2026-10-29 (perintah Hestia): Luna DIHAPUS dari HestiaFlow — tier Gratis tinggal Lyra.
+  // Baris Luna + key/akun panen/worker/log miliknya dibuang permanen dari DB.
+  try {
+    const lunaRow = db.prepare("SELECT id FROM providers WHERE brand_name='Luna'").get();
+    if (lunaRow) {
+      db.prepare("DELETE FROM harvested_accounts WHERE provider_id=?").run(lunaRow.id);
+      db.prepare("DELETE FROM api_keys WHERE provider_id=?").run(lunaRow.id);
+      db.prepare("DELETE FROM workers WHERE provider_id=?").run(lunaRow.id);
+      db.prepare("DELETE FROM harvest_logs WHERE provider_id=?").run(lunaRow.id);
+      try { db.prepare("DELETE FROM harvest_jobs WHERE provider_id=?").run(lunaRow.id); } catch {}
+      db.prepare("DELETE FROM providers WHERE id=?").run(lunaRow.id);
+    }
+  } catch {}
   const tierCount = db.prepare("SELECT COUNT(*) c FROM tiers").get().c;
   if (tierCount > 0) return;
   const insTier = db.prepare("INSERT INTO tiers (slug,name,audience_label,badge,max_models,sort_order) VALUES (?,?,?,?,?,?)");
