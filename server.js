@@ -142,6 +142,15 @@ function seed() {
   db.prepare("UPDATE tiers SET badge=? WHERE slug=?").run("★ TIER PREMIUM", "premium");
   // Koreksi permanen: base_url lama (domain mati) diganti domain live.
   db.prepare("UPDATE settings SET value='https://hestiaflow.lovie.me/v1' WHERE key='base_url' AND value LIKE '%hestia-gateway.id%'").run();
+  // Migrasi Orion (media, 2026-10-29) — PERBAIKAN: blok ini HARUS di bagian migrasi
+  // unconditional (jalan tiap startup), BUKAN di dalam seed() setelah early-return
+  // tierCount (DB live tidak kosong → seed() berhenti sebelum mencapai blok ini).
+  // upstream_url diisi operator lewat env PROVIDER_ORION_UPSTREAM_URL — tidak pernah ditulis di kode.
+  db.prepare("INSERT OR IGNORE INTO tiers (slug,name,audience_label,badge,max_models,sort_order) VALUES ('media','Media','KHUSUS GAMBAR & VIDEO','TIER MEDIA',NULL,5)").run();
+  db.prepare("INSERT INTO providers (tier_id,brand_name,tagline,model_count,model_list_json,model_notes_json,credit_note,default_credit,sort_order) SELECT (SELECT id FROM tiers WHERE slug='media'),?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM providers WHERE brand_name='Orion')").run(
+    "Orion", "Gambar AI tanpa kartu, 200 kredit per akun.", 5,
+    JSON.stringify(["flux", "gpt-image-2", "seedream", "gemini", "nano-banana-pro"]),
+    JSON.stringify({}), "200 kredit per akun.", 200, 1);
   const tierCount = db.prepare("SELECT COUNT(*) c FROM tiers").get().c;
   if (tierCount > 0) return;
   const insTier = db.prepare("INSERT INTO tiers (slug,name,audience_label,badge,max_models,sort_order) VALUES (?,?,?,?,?,?)");
@@ -161,13 +170,6 @@ function seed() {
     "30.000 token/hari per akun terverifikasi.", 30000, 1);
   db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES ('gateway_name','HestiaFlow')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES ('base_url',?)").run(GATEWAY_BASE_URL);
-  // Migrasi Orion (media, 2026-10-29): tier media + provider Orion.
-  // upstream_url diisi operator lewat env PROVIDER_ORION_UPSTREAM_URL — tidak pernah ditulis di kode.
-  db.prepare("INSERT OR IGNORE INTO tiers (slug,name,audience_label,badge,max_models,sort_order) VALUES ('media','Media','KHUSUS GAMBAR & VIDEO','TIER MEDIA',NULL,5)").run();
-  db.prepare("INSERT INTO providers (tier_id,brand_name,tagline,model_count,model_list_json,model_notes_json,credit_note,default_credit,sort_order) SELECT (SELECT id FROM tiers WHERE slug='media'),?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM providers WHERE brand_name='Orion')").run(
-    "Orion", "Gambar AI tanpa kartu, 200 kredit per akun.", 5,
-    JSON.stringify(["flux", "gpt-image-2", "seedream", "gemini", "nano-banana-pro"]),
-    JSON.stringify({}), "200 kredit per akun.", 200, 1);
 }
 seed();
 // Seed key pool Bansos dari env BANSOS_UPSTREAM_KEYS (dipisah koma/spasi/baris baru) -> workers provider Bansos.
