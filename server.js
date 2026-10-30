@@ -73,6 +73,14 @@ const MIRA_NOTES = { "z-image": "Gambar · 1 kredit per gambar", "qwen-image-2-1
 function seed() {
   // Migrasi: tabel vouchers + users.tier_expires_at (masa berlaku paket dari vocher).
   db.prepare("CREATE TABLE IF NOT EXISTS vouchers (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, tier_slug TEXT, duration_days INTEGER, used INTEGER DEFAULT 0, used_by INTEGER, used_at TEXT, created_at TEXT DEFAULT (datetime('now')))").run();
+  // Migrasi 2026-10-30 (perintah Hestia): voucher multi-pakai — 1 kode Spesial bisa ditukar banyak pengguna
+  // (maks 50 per kode, 1 perangkat hanya bisa menukar voucher Spesial 1x). Voucher tier lain tetap 1x pakai.
+  try {
+    const vcols = db.prepare("PRAGMA table_info(vouchers)").all().map((c) => c.name);
+    if (!vcols.includes("max_uses")) db.prepare("ALTER TABLE vouchers ADD COLUMN max_uses INTEGER DEFAULT 1").run();
+  } catch {}
+  db.prepare("CREATE TABLE IF NOT EXISTS voucher_redemptions (id INTEGER PRIMARY KEY AUTOINCREMENT, voucher_id INTEGER, user_id INTEGER, device_id TEXT, created_at TEXT DEFAULT (datetime('now')))").run();
+  try { db.prepare("INSERT INTO voucher_redemptions (voucher_id,user_id,device_id) SELECT id, used_by, 'legacy' FROM vouchers WHERE used=1 AND used_by IS NOT NULL AND NOT EXISTS (SELECT 1 FROM voucher_redemptions WHERE voucher_id=vouchers.id)").run(); } catch {}
   try {
     const ucols = db.prepare("PRAGMA table_info(users)").all().map((c) => c.name);
     if (!ucols.includes("tier_expires_at")) db.prepare("ALTER TABLE users ADD COLUMN tier_expires_at TEXT").run();
@@ -1799,11 +1807,26 @@ app.post("/api/voucher/redeem", requireAuth, (req, res) => {
   if (raw.length !== 16) return res.status(400).json({ ok: false, error: "Kode vocher harus 16 karakter." });
   const v = db.prepare("SELECT * FROM vouchers WHERE REPLACE(code,'-','')=?").get(raw);
   if (!v) return res.status(404).json({ ok: false, error: "Kode vocher tidak ditemukan." });
-  if (v.used) return res.status(400).json({ ok: false, error: "Kode vocher sudah dipakai." });
   // KUNCI TOTAL (2026-10-29): vocher tier terkunci tidak bisa ditukar (dicek SEBELUM vocher ditandai terpakai).
   if (["pro", "premium", "media2"].includes(v.tier_slug)) return res.status(400).json({ ok: false, error: "Tier ini sedang dikunci (Segera Hadir)." });
+  // Multi-pakai (2026-10-30): kuota kode dihitung dari tabel penukaran; flag used lama tetap dihormati untuk kode 1x pakai.
+  const maxUses = v.max_uses || 1;
+  const usedCount = db.prepare("SELECT COUNT(*) AS c FROM voucher_redemptions WHERE voucher_id=?").get(v.id).c;
+  if (usedCount >= maxUses || (maxUses === 1 && v.used)) return res.status(400).json({ ok: false, error: maxUses > 1 ? "Kode vocher sudah habis dipakai." : "Kode vocher sudah dipakai." });
+  const deviceId = String(req.body.deviceId || "").slice(0, 64);
+  if (v.tier_slug === "spesial") {
+    // Aturan Hestia 2026-10-30: 1 perangkat hanya bisa menukar voucher Spesial 1x (kode mana pun);
+    // 1 akun juga tidak bisa menukar kode yang sama 2x.
+    if (deviceId) {
+      const dv = db.prepare("SELECT 1 AS x FROM voucher_redemptions r JOIN vouchers vv ON vv.id=r.voucher_id WHERE vv.tier_slug='spesial' AND r.device_id=?").get(deviceId);
+      if (dv) return res.status(400).json({ ok: false, error: "Perangkat ini sudah pernah menukar vocher Spesial." });
+    }
+    const uv = db.prepare("SELECT 1 AS x FROM voucher_redemptions WHERE voucher_id=? AND user_id=?").get(v.id, req.user.id);
+    if (uv) return res.status(400).json({ ok: false, error: "Kamu sudah menukar kode ini." });
+  }
   const expires = new Date(Date.now() + (v.duration_days || 0) * 86400000).toISOString();
-  db.prepare("UPDATE vouchers SET used=1, used_by=?, used_at=datetime('now') WHERE id=?").run(req.user.id, v.id);
+  db.prepare("INSERT INTO voucher_redemptions (voucher_id,user_id,device_id) VALUES (?,?,?)").run(v.id, req.user.id, deviceId || null);
+  if (usedCount + 1 >= maxUses) db.prepare("UPDATE vouchers SET used=1, used_by=?, used_at=datetime('now') WHERE id=?").run(req.user.id, v.id);
   db.prepare("UPDATE users SET tier_slug=?, tier_expires_at=? WHERE id=?").run(v.tier_slug, expires, req.user.id);
   res.json({ ok: true, tierSlug: v.tier_slug, expiresAt: expires, message: `Vocher berhasil! Paket kamu jadi ${v.tier_slug === "premium" ? "Premium" : v.tier_slug === "pro" ? "Pro" : v.tier_slug === "spesial" ? "SPESIAL" : "Plus"} sampai ${new Date(expires).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}.` });
 });
@@ -1812,12 +1835,13 @@ app.post("/api/admin/vouchers", requireAdmin, (req, res) => {
   const slug = String(req.body.tierSlug || "").toLowerCase();
   if (!["plus", "pro", "premium", "spesial"].includes(slug)) return res.status(400).json({ ok: false, error: "invalid_tier" });
   const code = genVoucherCode();
-  const r = db.prepare("INSERT INTO vouchers (code,tier_slug,duration_days) VALUES (?,?,?)").run(code, slug, VOUCHER_DAYS[slug]);
-  res.json({ ok: true, voucher: { id: r.lastInsertRowid, code, tierSlug: slug, durationDays: VOUCHER_DAYS[slug], used: false } });
+  const maxUses = slug === "spesial" ? 50 : 1;
+  const r = db.prepare("INSERT INTO vouchers (code,tier_slug,duration_days,max_uses) VALUES (?,?,?,?)").run(code, slug, VOUCHER_DAYS[slug], maxUses);
+  res.json({ ok: true, voucher: { id: r.lastInsertRowid, code, tierSlug: slug, durationDays: VOUCHER_DAYS[slug], maxUses, used: false } });
 });
 app.get("/api/admin/vouchers", requireAdmin, (req, res) => {
   const rows = db.prepare("SELECT v.*, u.email AS used_by_email FROM vouchers v LEFT JOIN users u ON u.id=v.used_by ORDER BY v.created_at DESC").all();
-  res.json({ ok: true, vouchers: rows.map((v) => ({ id: v.id, code: v.code, tierSlug: v.tier_slug, durationDays: v.duration_days, used: !!v.used, usedBy: v.used_by_email || null, usedAt: v.used_at, createdAt: v.created_at })) });
+  res.json({ ok: true, vouchers: rows.map((v) => ({ id: v.id, code: v.code, tierSlug: v.tier_slug, durationDays: v.duration_days, maxUses: v.max_uses || 1, usesCount: db.prepare("SELECT COUNT(*) AS c FROM voucher_redemptions WHERE voucher_id=?").get(v.id).c, used: !!v.used, usedBy: v.used_by_email || null, usedAt: v.used_at, createdAt: v.created_at })) });
 });
 app.delete("/api/admin/vouchers/:id", requireAdmin, (req, res) => {
   const out = db.prepare("DELETE FROM vouchers WHERE id=?").run(req.params.id);
