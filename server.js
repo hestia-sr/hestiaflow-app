@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS workers (id INTEGER PRIMARY KEY AUTOINCREMENT, provid
 CREATE TABLE IF NOT EXISTS api_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, provider_id INTEGER, tier_id INTEGER, key_value TEXT, key_prefix TEXT, credit INTEGER, models_json TEXT DEFAULT '[]', model_source TEXT DEFAULT 'none', model_count INTEGER DEFAULT 0, status TEXT DEFAULT 'active', created_at TEXT DEFAULT (datetime('now')), FOREIGN KEY(user_id) REFERENCES users(id), FOREIGN KEY(provider_id) REFERENCES providers(id), FOREIGN KEY(tier_id) REFERENCES tiers(id));
 CREATE TABLE IF NOT EXISTS harvested_accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, api_key_id INTEGER, user_id INTEGER, provider_id INTEGER, tier_id INTEGER, temp_email TEXT, temp_password TEXT, upstream_api_key TEXT, upstream_base_url TEXT, created_at TEXT DEFAULT (datetime('now')), FOREIGN KEY(api_key_id) REFERENCES api_keys(id));
 CREATE TABLE IF NOT EXISTS harvest_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, provider_id INTEGER, message TEXT, created_at TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS harvest_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, provider_id INTEGER, tier_id INTEGER, api_key_id INTEGER, status TEXT DEFAULT 'queued', worker_id TEXT, note TEXT, created_at TEXT DEFAULT (datetime('now')), claimed_at TEXT, finished_at TEXT);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 `);
 
@@ -330,6 +331,86 @@ function migrationTokenOk(req) {
   if (want.length < 16 || got.length !== want.length) return false;
   try { return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want)); } catch { return false; }
 }
+// [kotak-pekerja] Fondasi arsitektur pekerja terpisah (perintah Hestia 2026-10-30):
+// web hanya menerima pesanan panen (tabel harvest_jobs); layanan pekerja di luar
+// yang menjalankan mesin pendaftaran, lalu menyetor hasilnya kemari. Semua
+// endpoint di bawah aktif hanya bila env WORKER_TOKEN terisi (min 16 char) dan
+// header x-worker-token cocok — tanpa itu menjawab 404 seolah tidak ada.
+function workerTokenOk(req) {
+  const want = process.env.WORKER_TOKEN || "";
+  const got = String(req.headers["x-worker-token"] || "");
+  if (want.length < 16 || got.length !== want.length) return false;
+  try { return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want)); } catch { return false; }
+}
+// Pekerja mengambil SATU tugas tertua yang menunggu (atau tugas claimed basi
+// >30 menit yang pekerjanya dianggap mati, supaya bisa diambil alih).
+app.post("/api/worker/claim", (req, res) => {
+  if (!workerTokenOk(req)) return res.status(404).json({ ok: false });
+  const workerId = String((req.body && req.body.workerId) || "pekerja").slice(0, 40);
+  const batasBasi = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const job = db.prepare("SELECT * FROM harvest_jobs WHERE status='queued' OR (status='claimed' AND claimed_at<?) ORDER BY id ASC LIMIT 1").get(batasBasi);
+  if (!job) return res.json({ ok: true, job: null });
+  db.prepare("UPDATE harvest_jobs SET status='claimed', claimed_at=?, worker_id=? WHERE id=?").run(new Date().toISOString(), workerId, job.id);
+  const provider = db.prepare("SELECT id, brand_name, upstream_url FROM providers WHERE id=?").get(job.provider_id);
+  if (!provider) { db.prepare("UPDATE harvest_jobs SET status='failed', finished_at=?, note='provider_not_found' WHERE id=?").run(new Date().toISOString(), job.id); return res.json({ ok: true, job: null }); }
+  console.log(`[pekerja] tugas #${job.id} diklaim ${workerId} (provider ${provider.brand_name})`);
+  return res.json({ ok: true, job: { id: job.id, apiKeyId: job.api_key_id, providerId: job.provider_id }, provider: { brand_name: provider.brand_name, upstream_url: provider.upstream_url } });
+});
+// Pekerja menyetor hasil satu tugas: baris akun panen ditulis di sini (pola yang
+// sama dengan doHarvest), kredit kunci diisi bila akunnya Live.
+app.post("/api/worker/result", (req, res) => {
+  if (!workerTokenOk(req)) return res.status(404).json({ ok: false });
+  const b = req.body || {};
+  const job = db.prepare("SELECT * FROM harvest_jobs WHERE id=?").get(b.jobId);
+  if (!job) return res.status(404).json({ ok: false, error: "job_not_found" });
+  if (job.status === "done") return res.json({ ok: true, already: true });
+  if (job.status !== "claimed") return res.status(409).json({ ok: false, error: "job_not_claimed" });
+  const provider = db.prepare("SELECT * FROM providers WHERE id=?").get(job.provider_id);
+  if (!provider) return res.status(404).json({ ok: false, error: "provider_not_found" });
+  const live = !!b.live;
+  const credit = (live && provider.default_credit != null) ? provider.default_credit : null;
+  db.prepare("INSERT INTO harvested_accounts (api_key_id,user_id,provider_id,tier_id,temp_email,temp_password,upstream_api_key,upstream_base_url) VALUES (?,?,?,?,?,?,?,?)")
+    .run(job.api_key_id, job.user_id, job.provider_id, job.tier_id, b.tempEmail || null, b.tempPassword || null, b.upstreamApiKey || null, b.upstreamBaseUrl || null);
+  db.prepare("UPDATE api_keys SET credit=? WHERE id=?").run(credit, job.api_key_id);
+  db.prepare("UPDATE harvest_jobs SET status='done', finished_at=?, note=? WHERE id=?").run(new Date().toISOString(), String(b.note || "").slice(0, 200), job.id);
+  logHarvest(job.user_id, job.provider_id, `Panen Akun (pekerja) ${live ? "Live" : "Mati"}.`);
+  console.log(`[pekerja] tugas #${job.id} selesai live=${live}`);
+  return res.json({ ok: true });
+});
+// Admin: buat pesanan panen ke antrean pekerja (kunci dibuat sekarang sebagai
+// tertunda; pekerja yang mengisinya). Jalur panen lama tidak diubah sama sekali.
+app.post("/api/admin/harvest-queue", requireAdmin, async (req, res) => {
+  try {
+    const { providerId, count } = req.body || {};
+    const provider = db.prepare("SELECT * FROM providers WHERE id=?").get(providerId);
+    if (!provider) throw new Error("provider_not_found");
+    if (!Number.isInteger(count) || count < 1 || count > 50) throw new Error("count_must_be_1_to_50");
+    const tier = db.prepare("SELECT * FROM tiers WHERE id=?").get(provider.tier_id);
+    if (tier && ["pro", "premium", "media2"].includes(tier.slug)) throw new Error("Tier " + (tier.name || tier.slug) + " sedang dikunci (Segera Hadir).");
+    let models = null, source = "none";
+    const fetched = await fetchProviderModels(provider);
+    if (fetched) { models = fetched; source = "endpoint"; }
+    else { try { const cfg = JSON.parse(provider.model_list_json || "[]"); if (cfg.length) { models = cfg; source = "configured"; } } catch {} }
+    if (!models) models = [];
+    if (provider.brand_name === "Stella") { models = STELLA_PUBLIC_MODELS.slice(); source = "configured"; }
+    if (provider.brand_name === "Lyra") { models = LYRA_MODELS.slice(); source = "configured"; }
+    if (provider.brand_name === "Vela") { models = VELA_MODELS.slice(); source = "configured"; }
+    if (provider.brand_name === "Spesial") { models = SPESIAL_MODELS.slice(); source = "configured"; }
+    if (tier && tier.max_models != null && models.length > tier.max_models) models = models.slice(0, tier.max_models);
+    const jobIds = [];
+    for (let i = 0; i < count; i++) {
+      const keyValue = `hgw-${randHex(16)}`;
+      const keyPrefix = keyValue.slice(0, 12);
+      const k = db.prepare("INSERT INTO api_keys (user_id,provider_id,tier_id,key_value,key_prefix,credit,models_json,model_source,model_count,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
+        .run(null, providerId, provider.tier_id, keyValue, keyPrefix, null, JSON.stringify(models), source, provider.model_count, null);
+      const jr = db.prepare("INSERT INTO harvest_jobs (user_id,provider_id,tier_id,api_key_id,status) VALUES (?,?,?,?,'queued')").run(null, providerId, provider.tier_id, k.lastInsertRowid);
+      jobIds.push(jr.lastInsertRowid);
+    }
+    console.log(`[pekerja] ${count} tugas baru masuk antrean (provider ${provider.brand_name})`);
+    return res.json({ ok: true, count, jobIds });
+  } catch (e) { return res.status(400).json({ ok: false, error: String(e && e.message || e) }); }
+});
+
 app.get("/api/_migration/export", (req, res) => {
   if (!migrationTokenOk(req)) return res.status(404).json({ ok: false });
   const tmp = DB_PATH + ".export.tmp";
