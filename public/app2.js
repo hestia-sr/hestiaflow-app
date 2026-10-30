@@ -185,11 +185,12 @@ function voucherSection() {
   <div style="display:flex;flex-direction:column;align-items:center;gap:10px"><input id="voucherCode" placeholder="Kode Vocher" style="text-align:center;max-width:320px;width:100%" /><button class="btn btn-plum" onclick="redeemVoucher()">Tukar</button></div>
   <p id="voucherMsg" class="muted"></p></div>`;
 }
+function hfDeviceId() { try { let d = localStorage.getItem("hf_device_id"); if (!d) { d = "d-" + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem("hf_device_id", d); } return d; } catch { return ""; } }
 async function redeemVoucher() {
   const inp = $("#voucherCode"); const msg = $("#voucherMsg");
   const code = inp ? inp.value.trim() : "";
   if (!code) { if (msg) msg.textContent = "Masukan dulu kode vocher-nya."; return; }
-  try { const r = await api("/api/voucher/redeem", { method: "POST", body: JSON.stringify({ code }) }); if (msg) msg.textContent = r.message || "Vocher berhasil ditukar."; setTimeout(() => location.reload(), 1500); }
+  try { const r = await api("/api/voucher/redeem", { method: "POST", body: JSON.stringify({ code, deviceId: hfDeviceId() }) }); if (msg) msg.textContent = r.message || "Vocher berhasil ditukar."; setTimeout(() => location.reload(), 1500); }
   catch (e) { if (msg) msg.textContent = e.message; }
 }
 function apiExamplesSection() {
@@ -520,16 +521,16 @@ function renderAdminSections() {
   }
   if (adminSection === "voucher") {
     const vs = adminCache.vouchers || [];
-    html = `<div id="sec-voucher"><h3>06 · Voucher</h3><p class="muted">Buat kode vocher (16 karakter, 1x pakai) untuk upgrade paket user. Plus = 3 hari, Pro = 7 hari, Premium = 14 hari, Spesial = 3 hari.</p>
+    html = `<div id="sec-voucher"><h3>06 · Voucher</h3><p class="muted">Buat kode vocher (16 karakter) untuk upgrade paket user. Plus = 3 hari, Pro = 7 hari, Premium = 14 hari, Spesial = 3 hari. Kode Spesial = kode bersama: bisa ditukar maks 50 pengguna, 1 perangkat hanya bisa menukar 1x.</p>
       <div class="row" style="gap:8px"><select id="newVoucherTier"><option value="plus">Plus (3 hari)</option><option value="pro">Pro (7 hari)</option><option value="premium">Premium (14 hari)</option><option value="spesial">Spesial (3 hari)</option></select><button class="btn btn-plum" onclick="createVoucher()">Buat Vocher</button></div>
       <p id="newVoucherMsg" class="muted"></p>
-      <div class="grid" style="margin-top:12px">${vs.length ? vs.map((v) => `<div class="card"><b>${esc(v.code)}</b><br /><span class="chip">${esc(v.tierSlug)}</span> <span class="chip">${v.durationDays} hari</span> ${v.used ? `<span class="chip">Dipakai oleh ${esc(v.usedBy || "?")}</span>` : `<span class="chip">Belum dipakai</span>`}<br /><button class="btn btn-ghost btn-sm" onclick="copyVoucher('${esc(v.code)}')">Salin Kode</button> <button class="btn btn-danger btn-sm" onclick="deleteVoucher(${v.id})">Hapus</button></div>`).join("") : `<p class="muted">Belum ada vocher.</p>`}</div></div>`;
+      <div class="grid" style="margin-top:12px">${vs.length ? vs.map((v) => `<div class="card"><b>${esc(v.code)}</b><br /><span class="chip">${esc(v.tierSlug)}</span> <span class="chip">${v.durationDays} hari</span> ${v.maxUses > 1 ? `<span class="chip">Terpakai ${v.usesCount || 0}/${v.maxUses}</span>` : (v.used ? `<span class="chip">Dipakai oleh ${esc(v.usedBy || "?")}</span>` : `<span class="chip">Belum dipakai</span>`)}<br /><button class="btn btn-ghost btn-sm" onclick="copyVoucher('${esc(v.code)}')">Salin Kode</button> <button class="btn btn-danger btn-sm" onclick="deleteVoucher(${v.id})">Hapus</button></div>`).join("") : `<p class="muted">Belum ada vocher.</p>`}</div></div>`;
   }
   el.innerHTML = html;
 }
 async function createVoucher() {
   const tier = $("#newVoucherTier").value; const msg = $("#newVoucherMsg");
-  try { const r = await api("/api/admin/vouchers", { method: "POST", body: JSON.stringify({ tierSlug: tier }) }); if (msg) msg.textContent = `Vocher dibuat: ${r.voucher.code} (${r.voucher.tierSlug}, ${r.voucher.durationDays} hari). Salin & beri ke user.`; loadAdmin(); }
+  try { const r = await api("/api/admin/vouchers", { method: "POST", body: JSON.stringify({ tierSlug: tier }) }); if (msg) msg.textContent = `Vocher dibuat: ${r.voucher.code} (${r.voucher.tierSlug}, ${r.voucher.durationDays} hari${r.voucher.maxUses > 1 ? `, maks ${r.voucher.maxUses} pengguna` : ""}). Salin & beri ke user.`; loadAdmin(); }
   catch (e) { if (msg) msg.textContent = "Gagal buat vocher: " + e.message; }
 }
 async function deleteVoucher(id) { if (!confirm("Hapus vocher ini?")) return; try { await api(`/api/admin/vouchers/${id}`, { method: "DELETE" }); loadAdmin(); } catch (e) { alert("Gagal hapus: " + e.message); } }
