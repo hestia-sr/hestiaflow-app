@@ -1911,6 +1911,19 @@ app.get("/api/admin/keys", requireAdmin, (req, res) => {
 });
 // Admin: delete any gateway key (Panel Admin > Kunci).
 // Removes the HestiaFlow key + the stored harvested-account data linked to it.
+// Admin: hapus SEMUA gateway key sekaligus (Panel Admin > Kunci > HAPUS SEMUA) — perintah Hestia 2026-10-30.
+// Sama seperti hapus per key: harvested_accounts yang terhubung ikut dihapus (limit panen user ikut bersih).
+// Admin: hapus semua key yang TIDAK ada credit-nya (credit kosong/NULL atau 0) — perintah Hestia 2026-10-30.
+app.delete("/api/admin/keys/no-credit", requireAdmin, (req, res) => {
+  const acc = db.prepare("DELETE FROM harvested_accounts WHERE api_key_id IN (SELECT id FROM api_keys WHERE credit IS NULL OR credit=0)").run();
+  const out = db.prepare("DELETE FROM api_keys WHERE credit IS NULL OR credit=0").run();
+  res.json({ ok: true, deletedKeys: out.changes, deletedAccounts: acc.changes });
+});
+app.delete("/api/admin/keys/all", requireAdmin, (req, res) => {
+  const acc = db.prepare("DELETE FROM harvested_accounts WHERE api_key_id IN (SELECT id FROM api_keys)").run();
+  const out = db.prepare("DELETE FROM api_keys").run();
+  res.json({ ok: true, deletedKeys: out.changes, deletedAccounts: acc.changes });
+});
 app.delete("/api/admin/keys/:id", requireAdmin, (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ ok: false, error: "invalid_id" });
