@@ -377,37 +377,47 @@ app.post("/api/worker/result", (req, res) => {
   console.log(`[pekerja] tugas #${job.id} selesai live=${live}`);
   return res.json({ ok: true });
 });
-// Admin: buat pesanan panen ke antrean pekerja (kunci dibuat sekarang sebagai
-// tertunda; pekerja yang mengisinya). Jalur panen lama tidak diubah sama sekali.
+// Pembuat antrean panen admin: kunci dibuat sekarang sebagai tertunda,
+// lalu satu tugas harvest_jobs dibuat per kunci untuk dikerjakan kotak pekerja.
+async function enqueueAdminHarvestJobs(provider, count) {
+  if (!provider) throw new Error("provider_not_found");
+  if (!Number.isInteger(count) || count < 1 || count > 50) throw new Error("count_must_be_1_to_50");
+  const tier = db.prepare("SELECT * FROM tiers WHERE id=?").get(provider.tier_id);
+  if (tier && ["pro", "premium", "media2"].includes(tier.slug)) throw new Error("Tier " + (tier.name || tier.slug) + " sedang dikunci (Segera Hadir).");
+  let models = null, source = "none";
+  const fetched = await fetchProviderModels(provider);
+  if (fetched) { models = fetched; source = "endpoint"; }
+  else { try { const cfg = JSON.parse(provider.model_list_json || "[]"); if (cfg.length) { models = cfg; source = "configured"; } } catch {} }
+  if (!models) models = [];
+  if (provider.brand_name === "Stella") { models = STELLA_PUBLIC_MODELS.slice(); source = "configured"; }
+  if (provider.brand_name === "Lyra") { models = LYRA_MODELS.slice(); source = "configured"; }
+  if (provider.brand_name === "Vela") { models = VELA_MODELS.slice(); source = "configured"; }
+  if (provider.brand_name === "Spesial") { models = SPESIAL_MODELS.slice(); source = "configured"; }
+  if (tier && tier.max_models != null && models.length > tier.max_models) models = models.slice(0, tier.max_models);
+  const jobIds = [];
+  const keys = [];
+  const logs = [];
+  for (let i = 1; i <= count; i++) {
+    const keyValue = `hgw-${randHex(16)}`;
+    const keyPrefix = keyValue.slice(0, 12);
+    const k = db.prepare("INSERT INTO api_keys (user_id,provider_id,tier_id,key_value,key_prefix,credit,models_json,model_source,model_count,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
+      .run(null, provider.id, provider.tier_id, keyValue, keyPrefix, null, JSON.stringify(models), source, provider.model_count, null);
+    const jr = db.prepare("INSERT INTO harvest_jobs (user_id,provider_id,tier_id,api_key_id,status) VALUES (?,?,?,?,'queued')").run(null, provider.id, provider.tier_id, k.lastInsertRowid);
+    jobIds.push(jr.lastInsertRowid);
+    keys.push({ id: k.lastInsertRowid, providerBrand: provider.brand_name, tierSlug: tier ? tier.slug : null, keyPrefix, credit: null, models, modelSource: source, modelCount: provider.model_count, live: false, queued: true, jobId: jr.lastInsertRowid });
+    logs.push(`Panen Akun ${i} masuk antrean pekerja.`);
+  }
+  console.log(`[pekerja] ${count} tugas baru masuk antrean (provider ${provider.brand_name})`);
+  return { count, jobIds, keys, logs, queued: true };
+}
+
+// Admin: buat pesanan panen langsung ke antrean pekerja.
 app.post("/api/admin/harvest-queue", requireAdmin, async (req, res) => {
   try {
     const { providerId, count } = req.body || {};
     const provider = db.prepare("SELECT * FROM providers WHERE id=?").get(providerId);
-    if (!provider) throw new Error("provider_not_found");
-    if (!Number.isInteger(count) || count < 1 || count > 50) throw new Error("count_must_be_1_to_50");
-    const tier = db.prepare("SELECT * FROM tiers WHERE id=?").get(provider.tier_id);
-    if (tier && ["pro", "premium", "media2"].includes(tier.slug)) throw new Error("Tier " + (tier.name || tier.slug) + " sedang dikunci (Segera Hadir).");
-    let models = null, source = "none";
-    const fetched = await fetchProviderModels(provider);
-    if (fetched) { models = fetched; source = "endpoint"; }
-    else { try { const cfg = JSON.parse(provider.model_list_json || "[]"); if (cfg.length) { models = cfg; source = "configured"; } } catch {} }
-    if (!models) models = [];
-    if (provider.brand_name === "Stella") { models = STELLA_PUBLIC_MODELS.slice(); source = "configured"; }
-    if (provider.brand_name === "Lyra") { models = LYRA_MODELS.slice(); source = "configured"; }
-    if (provider.brand_name === "Vela") { models = VELA_MODELS.slice(); source = "configured"; }
-    if (provider.brand_name === "Spesial") { models = SPESIAL_MODELS.slice(); source = "configured"; }
-    if (tier && tier.max_models != null && models.length > tier.max_models) models = models.slice(0, tier.max_models);
-    const jobIds = [];
-    for (let i = 0; i < count; i++) {
-      const keyValue = `hgw-${randHex(16)}`;
-      const keyPrefix = keyValue.slice(0, 12);
-      const k = db.prepare("INSERT INTO api_keys (user_id,provider_id,tier_id,key_value,key_prefix,credit,models_json,model_source,model_count,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
-        .run(null, providerId, provider.tier_id, keyValue, keyPrefix, null, JSON.stringify(models), source, provider.model_count, null);
-      const jr = db.prepare("INSERT INTO harvest_jobs (user_id,provider_id,tier_id,api_key_id,status) VALUES (?,?,?,?,'queued')").run(null, providerId, provider.tier_id, k.lastInsertRowid);
-      jobIds.push(jr.lastInsertRowid);
-    }
-    console.log(`[pekerja] ${count} tugas baru masuk antrean (provider ${provider.brand_name})`);
-    return res.json({ ok: true, count, jobIds });
+    const out = await enqueueAdminHarvestJobs(provider, count);
+    return res.json({ ok: true, ...out });
   } catch (e) { return res.status(400).json({ ok: false, error: String(e && e.message || e) }); }
 });
 
@@ -2453,6 +2463,13 @@ app.post("/api/admin/harvest", requireAdmin, async (req, res) => {
   if (!provider) return res.status(404).json({ ok: false, error: "provider_not_found" });
   if (!Number.isInteger(count) || count < 1 || count > 50) return res.status(400).json({ ok: false, error: "count_must_be_1_to_50" });
   try {
+    // Spesial dikerjakan kotak pekerja terpisah (perintah Hestia 2026-10-30):
+    // panel hanya memasukkan pesanan ke antrean; hasil Live/Mati ditulis pekerja
+    // saat menyetor. Provider lain tetap memakai jalur panen lama.
+    if (provider.brand_name === "Spesial") {
+      const out = await enqueueAdminHarvestJobs(provider, count);
+      return res.json({ ok: true, ...out });
+    }
     const out = await doHarvest({ userId: null, providerId: provider.id, count });
     res.json({ ok: true, ...out });
   } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
