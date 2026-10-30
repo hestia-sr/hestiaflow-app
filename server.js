@@ -26,6 +26,15 @@ const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "").split(",").map((s) => s.tr
 const TEST_SECRET = process.env.TEST_SECRET || "";
 const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, "data", "hestiaflow.db");
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+// [migrasi-db] Bila ada file .pending (hasil POST /api/_migration/import), pasang sebagai database.
+try {
+  const pendingDb = DB_PATH + ".pending";
+  if (fs.existsSync(pendingDb)) {
+    for (const suffix of ["-wal", "-shm"]) { try { fs.rmSync(DB_PATH + suffix, { force: true }); } catch {} }
+    fs.renameSync(pendingDb, DB_PATH);
+    console.log("[migrasi-db] database hasil impor dipasang.");
+  }
+} catch (e) { console.error("[migrasi-db] gagal memasang database impor:", e && e.message); }
 const db = new DatabaseSync(DB_PATH);
 
 // ---------- schema ----------
@@ -267,6 +276,42 @@ const app = express();
 // Limit body diperbesar: input gambar base64 untuk image-to-image (Media V2).
 app.use(express.json({ limit: "12mb" }));
 app.use(express.urlencoded({ extended: true }));
+
+// [migrasi-db] Endpoint SEMENTARA pemindahan server. Aktif hanya bila env MIGRATION_TOKEN
+// terisi (min 16 char). Tanpa token yang benar, menjawab 404 seolah tidak ada.
+function migrationTokenOk(req) {
+  const want = process.env.MIGRATION_TOKEN || "";
+  const got = String(req.headers["x-migration-token"] || "");
+  if (want.length < 16 || got.length !== want.length) return false;
+  try { return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want)); } catch { return false; }
+}
+app.get("/api/_migration/export", (req, res) => {
+  if (!migrationTokenOk(req)) return res.status(404).json({ ok: false });
+  const tmp = DB_PATH + ".export.tmp";
+  try { fs.rmSync(tmp, { force: true }); } catch {}
+  try {
+    db.exec("VACUUM INTO '" + tmp.replace(/'/g, "''") + "'");
+    res.download(tmp, "hestiaflow.db", () => { try { fs.rmSync(tmp, { force: true }); } catch {} });
+  } catch (e) {
+    console.error("[migrasi-db] ekspor gagal:", e && e.message);
+    res.status(500).json({ ok: false });
+  }
+});
+app.post("/api/_migration/import", express.raw({ type: "*/*", limit: "256mb" }), (req, res) => {
+  if (!migrationTokenOk(req)) return res.status(404).json({ ok: false });
+  const buf = req.body;
+  if (!Buffer.isBuffer(buf) || buf.length < 100 || buf.subarray(0, 16).toString("latin1") !== "SQLite format 3\u0000") {
+    return res.status(400).json({ ok: false, error: "bukan file sqlite" });
+  }
+  try {
+    fs.writeFileSync(DB_PATH + ".pending", buf);
+  } catch (e) {
+    console.error("[migrasi-db] impor gagal menulis:", e && e.message);
+    return res.status(500).json({ ok: false });
+  }
+  res.json({ ok: true, bytes: buf.length });
+  setTimeout(() => process.exit(1), 400);
+});
 app.use(express.static(path.join(__dirname, "public")));
 
 function signSession(userId) {
