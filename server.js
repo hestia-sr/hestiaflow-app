@@ -1531,7 +1531,7 @@ async function tryAutoRegister(provider, tempEmail, tempPassword) {
   return { upstreamApiKey: token, upstreamBaseUrl: base };
 }
 
-const TIER_HARVEST_LIMIT = { gratis: 100, plus: 500, pro: 1500, premium: 5000, media: 500, media2: 50, spesial: 100 };
+const TIER_HARVEST_LIMIT = { gratis: 100, plus: 500, pro: 1500, premium: 5000, media: 500, media2: 50, spesial: 25 };
 const TIER_RANK = { gratis: 0, plus: 1, pro: 2, premium: 3, media: 0, media2: 0, spesial: 0 };
 const VOUCHER_DAYS = { plus: 3, pro: 7, premium: 14, spesial: 3 };
 function effectiveTierSlug(u) { if (!u) return "gratis"; if (u.tier_expires_at && new Date(u.tier_expires_at) < new Date()) return "gratis"; return u.tier_slug || "gratis"; }
