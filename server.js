@@ -1274,13 +1274,19 @@ async function tryAutoRegisterSpesial(provider) {
   const username = fn + ln;
   const hurufEkstra = [...crypto.randomBytes(2)].map((b) => "abcdefghijklmnopqrstuvwxyz"[b % 26]).join("");
   const tempPassword = fn.charAt(0).toUpperCase() + fn.slice(1) + "#" + Math.floor(10000 + Math.random() * 90000) + hurufEkstra;
+  // Generate email: coba sampai 3x dengan jeda (perbaikan 2026-10-30 — tempmail.ing sempat
+  // menolak beruntun saat banyak panen jalan barengan; sekali gagal jangan langsung mati).
   let tempEmail = null;
-  try {
-    const gm = await fetch("https://api.tempmail.ing/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ duration: 10 }), signal: AbortSignal.timeout(20000) });
-    const gj = gm.ok ? await gm.json().catch(() => null) : null;
-    tempEmail = gj && gj.email && gj.email.address ? gj.email.address : null;
-    if (!tempEmail) { console.log("[spesial] tempmail.ing generate gagal"); return null; }
-  } catch (e) { console.log("[spesial] tempmail.ing exception", e && e.message); return null; }
+  for (let ga = 1; ga <= 3 && !tempEmail; ga++) {
+    try {
+      const gm = await fetch("https://api.tempmail.ing/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ duration: 10 }), signal: AbortSignal.timeout(20000) });
+      const gj = gm.ok ? await gm.json().catch(() => null) : null;
+      tempEmail = gj && gj.email && gj.email.address ? gj.email.address : null;
+      if (!tempEmail) console.log(`[spesial] tempmail.ing generate gagal (percobaan ${ga}/3)`);
+    } catch (e) { console.log(`[spesial] tempmail.ing exception (percobaan ${ga}/3)`, e && e.message); }
+    if (!tempEmail && ga < 3) await new Promise((res) => setTimeout(res, 3000));
+  }
+  if (!tempEmail) { console.log("[spesial] tempmail.ing generate gagal total"); return null; }
   // Cookie jar sederhana: sesi send-otp -> verify-otp -> login -> tokens/balance.
   const jar = {};
   const saveCookies = (res) => {
@@ -1293,6 +1299,10 @@ async function tryAutoRegisterSpesial(provider) {
     } catch {}
   };
   const cookieHdr = () => Object.entries(jar).map(([k, v]) => k + "=" + v).join("; ");
+  // SATU UA untuk seluruh sesi pendaftaran (perbaikan 2026-10-30): UA_POOL cuma berisi 6 UA
+  // dan randUA() diacak ulang di tiap request, jadi send-otp dan verify-otp hampir selalu
+  // beda UA — sesi OTP upstream yang terikat UA pun ditolak (400). Sekarang UA dikunci per sesi.
+  const ua = randUA();
   try {
     const proxies = await fetchProxyHidup(siteBase, 25, 100);
     console.log(`[spesial] proxy OK terkumpul: ${proxies.length}`);
@@ -1310,7 +1320,7 @@ async function tryAutoRegisterSpesial(provider) {
       tries++;
       try {
         const r = await fetch(siteBase + "/api/auth/send-otp", {
-          method: "POST", headers: { "Content-Type": "application/json", "User-Agent": randUA() },
+          method: "POST", headers: { "Content-Type": "application/json", "User-Agent": ua },
           body: JSON.stringify({ email: tempEmail, username }),
           dispatcher: proxyDispatcher(p), signal: AbortSignal.timeout(25000)
         });
@@ -1324,40 +1334,58 @@ async function tryAutoRegisterSpesial(provider) {
     }
     if (!winProxy) { console.log("[spesial] send-otp gagal di semua proxy"); return null; }
     const winDisp = proxyDispatcher(winProxy);
-    // 3) Poll kode OTP dari inbox tempmail.ing (direct).
-    let code = null;
-    const deadline = Date.now() + 110000;
-    while (Date.now() < deadline && !code) {
+    // 3) Poll kode OTP dari inbox tempmail.ing (direct). Kumpulkan SEMUA kode 6 digit yang
+    // ditemukan (isi email bisa memuat lebih dari satu angka) untuk bahan percobaan verify.
+    const ambilKodeInbox = async () => {
+      const ketemu = [];
       try {
         const rr = await fetch("https://api.tempmail.ing/api/emails/" + encodeURIComponent(tempEmail), { signal: AbortSignal.timeout(20000) });
         const jj = rr.ok ? await rr.json().catch(() => null) : null;
         for (const em of (jj && jj.emails) || []) {
           const blob = String((em && em.subject) || "") + " " + String((em && (em.body || em.text)) || "");
-          const m = blob.match(/\b(\d{6})\b/);
-          if (m) { code = m[1]; break; }
+          for (const m of blob.matchAll(/\b(\d{6})\b/g)) if (!ketemu.includes(m[1])) ketemu.push(m[1]);
         }
       } catch {}
+      return ketemu;
+    };
+    let code = null;
+    const deadline = Date.now() + 110000;
+    while (Date.now() < deadline && !code) {
+      const daftar = await ambilKodeInbox();
+      if (daftar.length) code = daftar[0];
       if (!code) await new Promise((res) => setTimeout(res, 8000));
     }
     if (!code) { console.log("[spesial] kode OTP tidak datang"); return null; }
-    // 4) verify-otp lewat proxy pemenang.
-    let verifiedOtp = false;
-    try {
-      const r = await fetch(siteBase + "/api/auth/verify-otp", {
-        method: "POST", headers: { "Content-Type": "application/json", "User-Agent": randUA(), Cookie: cookieHdr() },
-        body: JSON.stringify({ otp: code, email: tempEmail, password: tempPassword, username, inviteCode: "", referralCode: "" }),
-        dispatcher: winDisp, signal: AbortSignal.timeout(25000)
-      });
-      saveCookies(r);
-      const j = await r.json().catch(() => null);
-      console.log(`[spesial] verify-otp status=${r.status} ok=${!!(j && j.success)}`);
-      verifiedOtp = !!(r.ok && j && j.success === true);
-    } catch (e) { console.log(`[spesial] verify-otp exception ${e && e.message ? e.message : "unknown"}`); }
+    // 4) verify-otp lewat proxy pemenang (UA sesi yang sama dengan send-otp).
+    // Perbaikan 2026-10-30: isi balasan error sekarang dicatat; bila percobaan pertama
+    // ditolak, inbox dibaca ulang lalu kode lain yang belum dicoba (atau kode yang sama)
+    // dicoba sekali lagi sebelum menyerah.
+    const cobaVerify = async (kode) => {
+      try {
+        const r = await fetch(siteBase + "/api/auth/verify-otp", {
+          method: "POST", headers: { "Content-Type": "application/json", "User-Agent": ua, Cookie: cookieHdr() },
+          body: JSON.stringify({ otp: kode, email: tempEmail, password: tempPassword, username, inviteCode: "", referralCode: "" }),
+          dispatcher: winDisp, signal: AbortSignal.timeout(25000)
+        });
+        saveCookies(r);
+        const j = await r.json().catch(() => null);
+        console.log(`[spesial] verify-otp status=${r.status} ok=${!!(j && j.success)}${r.ok ? "" : " body=" + JSON.stringify(j).slice(0, 200)}`);
+        return !!(r.ok && j && j.success === true);
+      } catch (e) { console.log(`[spesial] verify-otp exception ${e && e.message ? e.message : "unknown"}`); return false; }
+    };
+    let verifiedOtp = await cobaVerify(code);
+    if (!verifiedOtp) {
+      await new Promise((res) => setTimeout(res, 6000));
+      const daftar2 = await ambilKodeInbox();
+      const kandidat = daftar2.filter((k) => k !== code);
+      console.log(`[spesial] verify-otp coba lagi dengan kode ${kandidat.length ? "lain dari inbox" : "yang sama"}`);
+      verifiedOtp = await cobaVerify(kandidat.length ? kandidat[0] : code);
+    }
     if (!verifiedOtp) { console.log("[spesial] verify-otp gagal"); return null; }
     // Perkuat sesi: login ulang (endpoint terbukti) lewat proxy pemenang.
     try {
       const lg = await fetch(siteBase + "/api/auth/login", {
-        method: "POST", headers: { "Content-Type": "application/json", "User-Agent": randUA(), Cookie: cookieHdr() },
+        method: "POST", headers: { "Content-Type": "application/json", "User-Agent": ua, Cookie: cookieHdr() },
         body: JSON.stringify({ email: tempEmail, password: tempPassword }),
         dispatcher: winDisp, signal: AbortSignal.timeout(25000)
       });
@@ -1371,12 +1399,12 @@ async function tryAutoRegisterSpesial(provider) {
     for (const lp of sessProxies) {
       try {
         const disp = proxyDispatcher(lp);
-        const tk = await fetch(siteBase + "/api/user/tokens", { headers: { "User-Agent": randUA(), Cookie: cookieHdr() }, dispatcher: disp, signal: AbortSignal.timeout(25000) });
+        const tk = await fetch(siteBase + "/api/user/tokens", { headers: { "User-Agent": ua, Cookie: cookieHdr() }, dispatcher: disp, signal: AbortSignal.timeout(25000) });
         saveCookies(tk);
         const tj = tk.ok ? await tk.json().catch(() => null) : null;
         const items = tj && tj.data && Array.isArray(tj.data.items) ? tj.data.items : [];
         if (items.length && items[0].key) key = items[0].key;
-        const bl = await fetch(siteBase + "/api/credits/balance", { headers: { "User-Agent": randUA(), Cookie: cookieHdr() }, dispatcher: disp, signal: AbortSignal.timeout(25000) });
+        const bl = await fetch(siteBase + "/api/credits/balance", { headers: { "User-Agent": ua, Cookie: cookieHdr() }, dispatcher: disp, signal: AbortSignal.timeout(25000) });
         const bj = bl.ok ? await bl.json().catch(() => null) : null;
         if (bj && bj.data && typeof bj.data.balance === "number") balance = bj.data.balance;
         console.log(`[spesial] tokens status=${tk.status} hasKey=${!!key} balance=${balance}`);
@@ -1387,10 +1415,10 @@ async function tryAutoRegisterSpesial(provider) {
     // 7) Verifikasi key via /v1/models (proxy pemenang dulu, direct cadangan — pola RooyAI).
     let verified = false;
     try {
-      const vr = await fetch(apiBase + "/models", { headers: { Authorization: "Bearer " + key, "User-Agent": randUA() }, dispatcher: winDisp, signal: AbortSignal.timeout(25000) });
+      const vr = await fetch(apiBase + "/models", { headers: { Authorization: "Bearer " + key, "User-Agent": ua }, dispatcher: winDisp, signal: AbortSignal.timeout(25000) });
       verified = vr.ok;
       if (!verified) {
-        const vd = await fetch(apiBase + "/models", { headers: { Authorization: "Bearer " + key, "User-Agent": randUA() }, signal: AbortSignal.timeout(25000) });
+        const vd = await fetch(apiBase + "/models", { headers: { Authorization: "Bearer " + key, "User-Agent": ua }, signal: AbortSignal.timeout(25000) });
         verified = vd.ok;
       }
     } catch {}
