@@ -1289,7 +1289,7 @@ async function tempmailGenerate() {
   return gj && gj.email && gj.email.address ? gj.email.address : null;
 }
 
-async function tryAutoRegisterSpesial(provider) {
+async function satuKaliSpesial(provider) {
   const apiBase = (provider.upstream_url || "").replace(/\/$/, "");
   if (!apiBase) return null;
   const siteBase = apiBase.replace(/\/v1$/, "").replace("://api.", "://");
@@ -1436,7 +1436,7 @@ async function tryAutoRegisterSpesial(provider) {
         }
       } catch (e) { console.log(`[spesial] send-otp ulang exception ${e && e.message ? e.message : "unknown"}`); }
     }
-    if (!verifiedOtp) { console.log("[spesial] verify-otp gagal"); return null; }
+    if (!verifiedOtp) { console.log("[spesial] verify-otp gagal"); return "GAGAL_VERIFY"; }
     // Perkuat sesi: login ulang (endpoint terbukti) lewat proxy pemenang.
     try {
       const lg = await fetch(siteBase + "/api/auth/login", {
@@ -1480,6 +1480,22 @@ async function tryAutoRegisterSpesial(provider) {
     console.log(`[spesial] auto-register ok, verified=${verified} balance=${balance}`);
     return { upstreamApiKey: key, upstreamBaseUrl: apiBase, tempEmail, tempPassword, live: verified };
   } catch (e) { console.log("[spesial] exception", e && e.message); return null; }
+}
+
+async function tryAutoRegisterSpesial(provider) {
+  // Sabar menunggu gelombang (perintah Hestia 2026-10-30): penolakan
+  // verify-otp di upstream datang bergelombang (terbukti diagnosis langsung:
+  // kode benar+segar pun ditolak saat gelombang buruk, lolos saat baik).
+  // Akun yang gugur di verify ditunggu 60 detik lalu diganti akun yang
+  // benar-benar segar, maksimal 3 ronde. Kegagalan tahap lain tidak diulang.
+  for (let ronde = 1; ronde <= 3; ronde++) {
+    const r = await satuKaliSpesial(provider);
+    if (r !== "GAGAL_VERIFY") return r;
+    if (ronde === 3) { console.log("[spesial] 3 ronde gugur di verify - menyerah untuk akun ini"); return null; }
+    console.log(`[spesial] ronde ${ronde} gugur di verify - tunggu 60 detik, coba akun segar`);
+    await new Promise((res) => setTimeout(res, 60000));
+  }
+  return null;
 }
 
 const _velaBadProxy = new Set();
