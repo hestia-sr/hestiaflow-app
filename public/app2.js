@@ -324,6 +324,19 @@ function showComingSoon() {
   const pop = $("#harvestProviderSidebar"); if (pop) pop.style.display = "none";
 }
 
+function showSpesialVoucher() {
+  let m = $("#tierLockModal");
+  if (!m) {
+    m = document.createElement("div"); m.id = "tierLockModal"; m.className = "tier-lock-modal";
+    m.innerHTML = `<div class="tier-lock-box"><p>Tier SPESIAL butuh kode voucher dari admin. Tukarkan kode voucher di kotak Vocher ya.</p><button class="btn btn-plum" onclick="closeTierLocked()">OK</button></div>`;
+    m.addEventListener("click", (e) => { if (e.target === m) closeTierLocked(); });
+    document.body.appendChild(m);
+  } else {
+    m.querySelector("p").textContent = "Tier SPESIAL butuh kode voucher dari admin. Tukarkan kode voucher di kotak Vocher ya.";
+  }
+  m.style.display = "flex";
+  const pop = $("#harvestProviderSidebar"); if (pop) pop.style.display = "none";
+}
 function closeTierLocked() { const m = $("#tierLockModal"); if (m) m.style.display = "none"; }
 function renderHarvestSidebar() {
   const el = $("#harvestProviderSidebar"); if (!el) return;
@@ -335,10 +348,10 @@ function renderHarvestSidebar() {
   // Tangga panen (aturan Hestia 2026-10-26): tiap paket panen tier-nya sendiri + semua tier di bawahnya.
   const canHarvest = (slug) => myRank >= (TIER_RANK[slug] ?? 0);
   // KUNCI TOTAL (2026-10-29): Plus, Pro, Premium terkunci untuk semua — klik → notif Segera Hadir.
-  const canPick = (x) => canHarvest(x.tier.slug) && x.tier.locked !== true;
+  const canPick = (x) => canHarvest(x.tier.slug) && x.tier.locked !== true && !(x.tier.slug === "spesial" && (!ME || ME.tier_slug !== "spesial"));
   const selItem = items.find((x) => x.p.id === selectedHarvestProviderId);
   if (!selectedHarvestProviderId || !selItem || !canPick(selItem)) selectedHarvestProviderId = (items.find((x) => canPick(x)) || items[0]).p.id;
-  el.innerHTML = items.map((x) => { const ok = canPick(x); const isLocked = !ok; const clickFn = ok ? `selectHarvestProvider(${x.p.id})` : "showComingSoon()"; return `<div class="tier-side-opt${x.p.id === selectedHarvestProviderId ? " sel" : ""}${isLocked ? " locked" : ""}" data-pid="${x.p.id}" onclick="${clickFn}">${isLocked ? "🔒 " : ""}${esc(short[x.tier.slug] || x.tier.name)} • ${x.p.modelCount} Model</div>`; }).join("");
+  el.innerHTML = items.map((x) => { const ok = canPick(x); const isLocked = !ok; const clickFn = ok ? `selectHarvestProvider(${x.p.id})` : (x.tier.slug === "spesial" && x.tier.locked !== true ? "showSpesialVoucher()" : "showComingSoon()"); return `<div class="tier-side-opt${x.p.id === selectedHarvestProviderId ? " sel" : ""}${isLocked ? " locked" : ""}" data-pid="${x.p.id}" onclick="${clickFn}">${isLocked ? "🔒 " : ""}${esc(short[x.tier.slug] || x.tier.name)} • ${x.p.modelCount} Model</div>`; }).join("");
   const cur = items.find((x) => x.p.id === selectedHarvestProviderId);
   const lbl = $("#tierPickerLabel"); if (lbl && cur) lbl.textContent = `${short[cur.tier.slug] || cur.tier.name} • ${cur.p.modelCount} Model`;
   updateHarvestLimitUI();
@@ -350,6 +363,7 @@ function toggleTierPicker() {
 function selectHarvestProvider(pid) {
   const _t = (TIERS.flatMap((t) => (t.providers || []).map((p) => ({ tier: t, p })))).find((x) => x.p.id === pid);
   if (_t && _t.tier.locked === true) { showComingSoon(); return; }
+  if (_t && _t.tier.slug === "spesial" && (!ME || ME.tier_slug !== "spesial")) { showSpesialVoucher(); return; }
   selectedHarvestProviderId = pid;
   document.querySelectorAll(".tier-side-opt").forEach((d) => d.classList.toggle("sel", Number(d.dataset.pid) === pid));
   const pop = $("#harvestProviderSidebar"); if (pop) pop.style.display = "none";
@@ -506,8 +520,8 @@ function renderAdminSections() {
   }
   if (adminSection === "voucher") {
     const vs = adminCache.vouchers || [];
-    html = `<div id="sec-voucher"><h3>06 · Voucher</h3><p class="muted">Buat kode vocher (16 karakter, 1x pakai) untuk upgrade paket user. Plus = 3 hari, Pro = 7 hari, Premium = 14 hari.</p>
-      <div class="row" style="gap:8px"><select id="newVoucherTier"><option value="plus">Plus (3 hari)</option><option value="pro">Pro (7 hari)</option><option value="premium">Premium (14 hari)</option></select><button class="btn btn-plum" onclick="createVoucher()">Buat Vocher</button></div>
+    html = `<div id="sec-voucher"><h3>06 · Voucher</h3><p class="muted">Buat kode vocher (16 karakter, 1x pakai) untuk upgrade paket user. Plus = 3 hari, Pro = 7 hari, Premium = 14 hari, Spesial = 3 hari.</p>
+      <div class="row" style="gap:8px"><select id="newVoucherTier"><option value="plus">Plus (3 hari)</option><option value="pro">Pro (7 hari)</option><option value="premium">Premium (14 hari)</option><option value="spesial">Spesial (3 hari)</option></select><button class="btn btn-plum" onclick="createVoucher()">Buat Vocher</button></div>
       <p id="newVoucherMsg" class="muted"></p>
       <div class="grid" style="margin-top:12px">${vs.length ? vs.map((v) => `<div class="card"><b>${esc(v.code)}</b><br /><span class="chip">${esc(v.tierSlug)}</span> <span class="chip">${v.durationDays} hari</span> ${v.used ? `<span class="chip">Dipakai oleh ${esc(v.usedBy || "?")}</span>` : `<span class="chip">Belum dipakai</span>`}<br /><button class="btn btn-ghost btn-sm" onclick="copyVoucher('${esc(v.code)}')">Salin Kode</button> <button class="btn btn-danger btn-sm" onclick="deleteVoucher(${v.id})">Hapus</button></div>`).join("") : `<p class="muted">Belum ada vocher.</p>`}</div></div>`;
   }
