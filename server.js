@@ -746,9 +746,7 @@ async function tryAutoRegisterRooyai(provider) {
     // 0) Alamat email dari tempmail.ing (perintah Hestia 2026-10-29): domain email lama
     // ditolak upstream sebagai disposable; alamat tempmail.ing diterima (terbukti live).
     try {
-      const gm = await fetch("https://api.tempmail.ing/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ duration: 10 }) });
-      const gj = await gm.json().catch(() => null);
-      if (gj && gj.email && gj.email.address) tempEmail = gj.email.address;
+      tempEmail = await tempmailGenerate();
     } catch {}
     if (!tempEmail) { console.log("[rooyai] tempmail generate failed"); return null; }
     // 1) Register LEWAT PROXY (perintah Hestia 2026-10-29): IP server ditolak upstream
@@ -1099,9 +1097,7 @@ async function tryAutoRegisterLyra(provider) {
   const tempPassword = nama.charAt(0).toUpperCase() + nama.slice(1) + "#" + Math.floor(10000 + Math.random() * 90000) + hurufEkstra;
   let tempEmail = null;
   try {
-    const gm = await fetch("https://api.tempmail.ing/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ duration: 10 }), signal: AbortSignal.timeout(20000) });
-    const gj = gm.ok ? await gm.json().catch(() => null) : null;
-    tempEmail = gj && gj.email && gj.email.address ? gj.email.address : null;
+    tempEmail = await tempmailGenerate();
     if (!tempEmail) { console.log("[lyra] tempmail.ing generate gagal"); return null; }
   } catch (e) { console.log("[lyra] tempmail.ing exception", e && e.message); return null; }
   try {
@@ -1262,6 +1258,22 @@ async function tryAutoRegisterOrion(provider) {
 // siteBase diturunkan dari provider.upstream_url (env) — domain asli tidak ditulis di kode.
 const _spesialBadProxy = new Set();
 
+// Gerbang generate tempmail.ing (perbaikan 2026-10-30): SEMUA mesin panen yang membuat
+// email lewat tempmail.ing berbagi satu antrean berjeda. Generate yang menumpuk di detik
+// yang sama ditolak upstream (terbukti 55x "gagal total" dalam 23 menit di log Spesial),
+// jadi tiap generate memesan slot waktu minimum 2,5 detik dari generate sebelumnya.
+// Reservasi slot terjadi sinkron sebelum await pertama, jadi antrean aman dari balapan.
+let _tmSlotBerikutnya = 0;
+async function tempmailGenerate() {
+  const sekarang = Date.now();
+  const mulai = Math.max(sekarang, _tmSlotBerikutnya);
+  _tmSlotBerikutnya = mulai + 2500;
+  if (mulai > sekarang) await new Promise((res) => setTimeout(res, mulai - sekarang));
+  const gm = await fetch("https://api.tempmail.ing/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ duration: 10 }), signal: AbortSignal.timeout(20000) });
+  const gj = gm.ok ? await gm.json().catch(() => null) : null;
+  return gj && gj.email && gj.email.address ? gj.email.address : null;
+}
+
 async function tryAutoRegisterSpesial(provider) {
   const apiBase = (provider.upstream_url || "").replace(/\/$/, "");
   if (!apiBase) return null;
@@ -1278,12 +1290,8 @@ async function tryAutoRegisterSpesial(provider) {
   // menolak beruntun saat banyak panen jalan barengan; sekali gagal jangan langsung mati).
   let tempEmail = null;
   for (let ga = 1; ga <= 3 && !tempEmail; ga++) {
-    try {
-      const gm = await fetch("https://api.tempmail.ing/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ duration: 10 }), signal: AbortSignal.timeout(20000) });
-      const gj = gm.ok ? await gm.json().catch(() => null) : null;
-      tempEmail = gj && gj.email && gj.email.address ? gj.email.address : null;
-      if (!tempEmail) console.log(`[spesial] tempmail.ing generate gagal (percobaan ${ga}/3)`);
-    } catch (e) { console.log(`[spesial] tempmail.ing exception (percobaan ${ga}/3)`, e && e.message); }
+    tempEmail = await tempmailGenerate().catch(() => null);
+    if (!tempEmail) console.log(`[spesial] tempmail.ing generate gagal (percobaan ${ga}/3)`);
     if (!tempEmail && ga < 3) await new Promise((res) => setTimeout(res, 3000));
   }
   if (!tempEmail) { console.log("[spesial] tempmail.ing generate gagal total"); return null; }
@@ -1373,13 +1381,45 @@ async function tryAutoRegisterSpesial(provider) {
         return !!(r.ok && j && j.success === true);
       } catch (e) { console.log(`[spesial] verify-otp exception ${e && e.message ? e.message : "unknown"}`); return false; }
     };
+    const kodeDicoba = new Set([code]);
     let verifiedOtp = await cobaVerify(code);
     if (!verifiedOtp) {
       await new Promise((res) => setTimeout(res, 6000));
       const daftar2 = await ambilKodeInbox();
-      const kandidat = daftar2.filter((k) => k !== code);
+      const kandidat = daftar2.filter((k) => !kodeDicoba.has(k));
       console.log(`[spesial] verify-otp coba lagi dengan kode ${kandidat.length ? "lain dari inbox" : "yang sama"}`);
-      verifiedOtp = await cobaVerify(kandidat.length ? kandidat[0] : code);
+      const kode2 = kandidat.length ? kandidat[0] : code;
+      kodeDicoba.add(kode2);
+      verifiedOtp = await cobaVerify(kode2);
+    }
+    if (!verifiedOtp) {
+      // Perbaikan 2026-10-30 (kedua): balasan upstream terbukti berbunyi "kode salah atau
+      // sudah kedaluwarsa" — mengulang kode lama tidak menolong. Minta kode BARU lewat
+      // send-otp ulang (proxy + UA + cookie sesi yang sama), tunggu kode yang belum pernah
+      // dicoba muncul di inbox, lalu verifikasi dengan kode segar itu.
+      console.log("[spesial] verify-otp minta kode baru (send-otp ulang)");
+      try {
+        const r2 = await fetch(siteBase + "/api/auth/send-otp", {
+          method: "POST", headers: { "Content-Type": "application/json", "User-Agent": ua, Cookie: cookieHdr() },
+          body: JSON.stringify({ email: tempEmail, username }),
+          dispatcher: winDisp, signal: AbortSignal.timeout(25000)
+        });
+        saveCookies(r2);
+        const j2 = await r2.json().catch(() => null);
+        console.log(`[spesial] send-otp ulang status=${r2.status} ok=${!!(j2 && j2.success)}`);
+        if (r2.ok && j2 && j2.success === true) {
+          let kodeBaru = null;
+          const deadline2 = Date.now() + 90000;
+          while (Date.now() < deadline2 && !kodeBaru) {
+            const daftar3 = await ambilKodeInbox();
+            const segar = daftar3.filter((k) => !kodeDicoba.has(k));
+            if (segar.length) kodeBaru = segar[0];
+            if (!kodeBaru) await new Promise((res) => setTimeout(res, 8000));
+          }
+          if (kodeBaru) { kodeDicoba.add(kodeBaru); verifiedOtp = await cobaVerify(kodeBaru); }
+          else console.log("[spesial] kode baru tidak datang");
+        }
+      } catch (e) { console.log(`[spesial] send-otp ulang exception ${e && e.message ? e.message : "unknown"}`); }
     }
     if (!verifiedOtp) { console.log("[spesial] verify-otp gagal"); return null; }
     // Perkuat sesi: login ulang (endpoint terbukti) lewat proxy pemenang.
