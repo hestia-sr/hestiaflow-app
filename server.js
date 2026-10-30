@@ -1318,10 +1318,66 @@ function variasiGmail(induk) {
 
 // Klien IMAP mini (TLS bawaan Node, tanpa dependensi baru): masuk ke inbox
 // induk, cari email yang ditujukan ke alamat variasi, ambil angka 6 digitnya.
-function imapAmbilKode(induk, alamatVariasi) {
+// ATURAN KESEGARAN (perbaikan 2026-10-30 malam): inbox induk adalah inbox
+// akun hidup yang berisi banyak email verifikasi LAMA. Tanpa penyaring,
+// jalur cadangan SUBJECT "Verification" mengambil email lama itu dan
+// kodenya pasti ditolak upstream (bukti log live: verify ditembak 1-3
+// detik sesudah send-otp — mustahil email segar sudah tiba). Sekarang:
+// sebelum send-otp, imapKumpulkanIdLama mencatat UID semua email calon
+// (TO variasi + subjek Verification); imapAmbilKode HANYA menerima email
+// yang UID-nya tidak ada di catatan itu — yang terbaca selalu email yang
+// tiba sesudah kode diminta pada percobaan ini. Semua status per panggilan
+// lokal (tanpa status bersama) supaya panen serentak tidak saling tabrak.
+function imapKumpulkanIdLama(induk, alamatVariasi) {
+  const tls = require("tls");
+  return new Promise((resolve) => {
+    const lama = new Set();
+    let selesai = false;
+    let sock = null;
+    const tutup = () => { if (!selesai) { selesai = true; try { if (sock) sock.destroy(); } catch {} resolve(lama); } };
+    const imapHost = process.env.SPESIAL_IMAP_HOST || "imap.gmail.com";
+    const imapPort = Number(process.env.SPESIAL_IMAP_PORT || 993);
+    try { sock = tls.connect(imapPort, imapHost, { servername: imapHost }); }
+    catch { return resolve(lama); }
+    sock.setTimeout(20000, tutup);
+    sock.on("error", tutup);
+    let buf = "";
+    let langkah = 0;
+    const kirim = (teks) => { try { sock.write(teks + "\r\n"); } catch {} };
+    const serap = (teks) => {
+      const m = String(teks || "").match(/\* SEARCH([^\r\n]*)/);
+      if (m) for (const id of (m[1].match(/\d+/g) || [])) lama.add(id);
+    };
+    sock.on("data", (d) => {
+      buf += d.toString("utf8");
+      try {
+        if (langkah === 0 && buf.includes("* OK")) {
+          langkah = 1; buf = "";
+          kirim('a1 LOGIN "' + induk.email.replace(/"/g, "") + '" "' + induk.app.replace(/"/g, "") + '"');
+        } else if (langkah === 1) {
+          if (buf.includes("a1 NO") || buf.includes("a1 BAD")) { console.log("[spesial] IMAP Gmail induk: login ditolak"); return tutup(); }
+          if (buf.includes("a1 OK")) { langkah = 2; buf = ""; kirim("a2 SELECT INBOX"); }
+        } else if (langkah === 2 && buf.includes("a2 OK")) {
+          langkah = 3; buf = "";
+          kirim('a3 UID SEARCH TO "' + alamatVariasi.replace(/"/g, "") + '"');
+        } else if (langkah === 3 && buf.includes("a3 OK")) {
+          serap(buf); buf = "";
+          langkah = 4;
+          kirim('a4 UID SEARCH SUBJECT "Verification"');
+        } else if (langkah === 4 && buf.includes("a4 OK")) {
+          serap(buf);
+          return tutup();
+        }
+      } catch { return tutup(); }
+    });
+  });
+}
+
+function imapAmbilKode(induk, alamatVariasi, idLama) {
   const tls = require("tls");
   return new Promise((resolve) => {
     const hasil = [];
+    const lama = idLama || new Set();
     let selesai = false;
     let sock = null;
     const tutup = (v) => { if (!selesai) { selesai = true; try { if (sock) sock.destroy(); } catch {} resolve(v); } };
@@ -1334,6 +1390,12 @@ function imapAmbilKode(induk, alamatVariasi) {
     let buf = "";
     let langkah = 0;
     const kirim = (teks) => { try { sock.write(teks + "\r\n"); } catch {} };
+    const pilihBaru = (teks) => {
+      const m = String(teks || "").match(/\* SEARCH([^\r\n]*)/);
+      const ids = m ? (m[1].match(/\d+/g) || []) : [];
+      for (let k = ids.length - 1; k >= 0; k--) if (!lama.has(ids[k])) return ids[k];
+      return null;
+    };
     sock.on("data", (d) => {
       buf += d.toString("utf8");
       try {
@@ -1345,21 +1407,22 @@ function imapAmbilKode(induk, alamatVariasi) {
           if (buf.includes("a1 OK")) { langkah = 2; buf = ""; kirim("a2 SELECT INBOX"); }
         } else if (langkah === 2 && buf.includes("a2 OK")) {
           langkah = 3; buf = "";
-          kirim('a3 SEARCH TO "' + alamatVariasi.replace(/"/g, "") + '"');
+          kirim('a3 UID SEARCH TO "' + alamatVariasi.replace(/"/g, "") + '"');
         } else if (langkah === 3 && buf.includes("a3 OK")) {
-          const m = buf.match(/\* SEARCH([^\r\n]*)/);
-          const ids = m ? (m[1].match(/\d+/g) || []) : [];
+          const target = pilihBaru(buf);
           buf = "";
-          if (!ids.length) { langkah = 5; kirim('a4 SEARCH SUBJECT "Verification"'); }
-          else { langkah = 4; kirim("a6 FETCH " + ids[ids.length - 1] + " BODY[TEXT]"); }
+          if (!target) { langkah = 5; kirim('a4 UID SEARCH SUBJECT "Verification"'); }
+          else { langkah = 4; kirim("a6 UID FETCH " + target + " BODY[TEXT]"); }
         } else if (langkah === 5 && buf.includes("a4 OK")) {
-          const m = buf.match(/\* SEARCH([^\r\n]*)/);
-          const ids = m ? (m[1].match(/\d+/g) || []) : [];
+          const target = pilihBaru(buf);
           buf = "";
-          if (!ids.length) return tutup(hasil);
-          langkah = 4; kirim("a6 FETCH " + ids[ids.length - 1] + " BODY[TEXT]");
+          if (!target) return tutup(hasil);
+          langkah = 4; kirim("a6 UID FETCH " + target + " BODY[TEXT]");
         } else if (langkah === 4 && buf.includes("a6 OK")) {
-          for (const m of buf.matchAll(/\b(\d{6})\b/g)) if (!hasil.includes(m[1])) hasil.push(m[1]);
+          // Buang kepala respons FETCH (memuat UID pesan itu sendiri) supaya
+          // UID 6 digit tidak ikut terbaca sebagai kandidat kode.
+          const isi = buf.replace(/\* \d+ FETCH \(UID \d+/, "");
+          for (const m of isi.matchAll(/\b(\d{6})\b/g)) if (!hasil.includes(m[1])) hasil.push(m[1]);
           return tutup(hasil);
         }
       } catch { return tutup(hasil); }
@@ -1418,6 +1481,9 @@ async function satuKaliSpesial(provider) {
     const proxies = await fetchProxyHidup(siteBase, 25, 100);
     console.log(`[spesial] proxy OK terkumpul: ${proxies.length}`);
     if (!proxies.length) { console.log("[spesial] tidak ada proxy hidup — gagal jujur (tanpa fallback direct)"); return null; }
+    // Baseline kesegaran Gmail: catat UID email lama SEBELUM send-otp pertama,
+    // supaya hanya email yang tiba sesudah ini yang boleh dibaca kodenya.
+    const idLamaGmail = indukGmail ? await imapKumpulkanIdLama(indukGmail, tempEmail) : null;
     // 2) send-otp lewat proxy (maks 4x coba).
     let winProxy = null;
     const sudahCoba = new Set();
@@ -1448,7 +1514,7 @@ async function satuKaliSpesial(provider) {
     // 3) Poll kode OTP dari inbox sumber terpilih. Kumpulkan SEMUA kode 6 digit yang
     // ditemukan (isi email bisa memuat lebih dari satu angka) untuk bahan percobaan verify.
     const ambilKodeInbox = async () => {
-      if (indukGmail) return imapAmbilKode(indukGmail, tempEmail);
+      if (indukGmail) return imapAmbilKode(indukGmail, tempEmail, idLamaGmail);
       const ketemu = [];
       try {
         const rr = await fetch("https://api.tempmail.ing/api/emails/" + encodeURIComponent(tempEmail), { signal: AbortSignal.timeout(20000) });
