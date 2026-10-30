@@ -72,6 +72,13 @@ const VELA_NOTES = { "DeepSeek-V4-Flash": "DeepSeek V4 Flash — kencang untuk c
 // Aquila ditambah 2026-10-31 (perintah Hestia "kunci aja dulu untuk pengguna"):
 // provider Spesial kedua ini dikunci untuk pengguna — hanya admin yang bisa panen.
 const HIDDEN_PROVIDER_BRANDS = ["Vela", "Aquila"];
+// Tier yang dikunci untuk PENGGUNA (perintah Hestia 2026-10-31 "kunci aja dulu semua
+// tier"): panen pengguna berhenti dan kartu tier tampil terkunci, TAPI kunci lama yang
+// sudah beredar tetap dilayani gateway seperti biasa (banyak yang masih bercredit) dan
+// admin tetap bisa panen. Tier spesial SENGAJA tidak masuk daftar ini — provider
+// Spesial lama masih dipakai orang yang sudah redeem voucher (perintah Hestia);
+// Aquila dikunci per-provider lewat HIDDEN_PROVIDER_BRANDS di atas.
+const USER_LOCKED_TIER_SLUGS = ["gratis", "plus", "media"];
 // SPESIAL (tier Spesial, 2026-10-30, perintah Hestia): tier promosi web — katalog = 9 model
 // chat yang TERBUKTI kebuka di akun trial upstream (tes operator 2026-10-30). Nama publik =
 // id upstream apa adanya (tanpa peta). upstream_url TIDAK ditulis di kode — diisi operator
@@ -2375,7 +2382,7 @@ app.get("/api/public/providers/:id/models", (req, res) => {
 });
 app.get("/api/public/tiers", (req, res) => {
   const tiers = db.prepare("SELECT * FROM tiers ORDER BY sort_order").all().map((t) => ({
-    id: t.id, slug: t.slug, name: t.name, audienceLabel: t.audience_label, badge: t.badge, maxModels: t.max_models, locked: ["pro", "premium", "media2"].includes(t.slug),
+    id: t.id, slug: t.slug, name: t.name, audienceLabel: t.audience_label, badge: t.badge, maxModels: t.max_models, locked: ["pro", "premium", "media2"].includes(t.slug) || USER_LOCKED_TIER_SLUGS.includes(t.slug),
     providers: db.prepare("SELECT * FROM providers WHERE tier_id=? ORDER BY sort_order").all(t.id).filter((p) => !HIDDEN_PROVIDER_BRANDS.includes(p.brand_name)).map(publicProvider),
   }));
   res.json({ ok: true, tiers });
@@ -2520,6 +2527,10 @@ app.post("/api/harvest", requireAuth, async (req, res) => {
   // Provider tersembunyi dikunci untuk pengguna biasa (pola Vela; Aquila per perintah
   // Hestia 2026-10-31) — panennya hanya lewat panel admin / akun admin.
   if (HIDDEN_PROVIDER_BRANDS.includes(provider.brand_name) && !(req.user && req.user.is_admin)) return res.status(403).json({ ok: false, error: "provider_locked" });
+  // Kunci tier untuk pengguna (2026-10-31): tier di USER_LOCKED_TIER_SLUGS tidak bisa
+  // dipanen pengguna biasa; admin dikecualikan. Kunci lama tidak terpengaruh sama sekali.
+  const harvestTier = db.prepare("SELECT slug FROM tiers WHERE id=?").get(provider.tier_id);
+  if (harvestTier && USER_LOCKED_TIER_SLUGS.includes(harvestTier.slug) && !(req.user && req.user.is_admin)) return res.status(403).json({ ok: false, error: "tier_locked" });
   if (!Number.isInteger(count) || count < 1 || count > 50) return res.status(400).json({ ok: false, error: "count_must_be_1_to_50" });
   try {
     const out = await doHarvest({ userId: req.user.id, providerId: provider.id, count });
