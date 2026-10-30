@@ -1289,6 +1289,84 @@ async function tempmailGenerate() {
   return gj && gj.email && gj.email.address ? gj.email.address : null;
 }
 
+// ===== Sumber email Gmail induk untuk Spesial (2026-10-30, perintah Hestia) =====
+// Induk dikonfigurasi lewat env: SPESIAL_GMAIL_EMAIL + SPESIAL_GMAIL_APP_PASSWORD
+// (App Password Google — bukan sandi utama; spasi pada App Password dibuang).
+function gmailIndukSpesial() {
+  const email = (process.env.SPESIAL_GMAIL_EMAIL || "").trim();
+  const app = (process.env.SPESIAL_GMAIL_APP_PASSWORD || "").replace(/\s+/g, "");
+  if (!email || !app || !email.includes("@")) return null;
+  return { email, app };
+}
+
+// Variasi alamat dari induk: titik di posisi acak (Gmail mengabaikan titik)
+// dan kadang tag "+kata+angka" (isi tag bebas). Tiap panggilan = rupa baru.
+function variasiGmail(induk) {
+  const at = induk.indexOf("@");
+  const bersih = induk.slice(0, at).split("+")[0].replace(/\./g, "");
+  const domain = induk.slice(at + 1);
+  let lokal = bersih;
+  if (bersih.length > 3) {
+    do {
+      lokal = bersih.split("").map((c, i) => (i > 0 && Math.random() < 0.35 ? "." : "") + c).join("");
+    } while (!lokal.includes("."));
+  }
+  const kata = ["promo", "info", "online", "akses", "daftar", "akun", "baru", "kuota"];
+  if (Math.random() < 0.5) lokal += "+" + kata[Math.floor(Math.random() * kata.length)] + Math.floor(10 + Math.random() * 90);
+  return lokal + "@" + domain;
+}
+
+// Klien IMAP mini (TLS bawaan Node, tanpa dependensi baru): masuk ke inbox
+// induk, cari email yang ditujukan ke alamat variasi, ambil angka 6 digitnya.
+function imapAmbilKode(induk, alamatVariasi) {
+  const tls = require("tls");
+  return new Promise((resolve) => {
+    const hasil = [];
+    let selesai = false;
+    let sock = null;
+    const tutup = (v) => { if (!selesai) { selesai = true; try { if (sock) sock.destroy(); } catch {} resolve(v); } };
+    const imapHost = process.env.SPESIAL_IMAP_HOST || "imap.gmail.com";
+    const imapPort = Number(process.env.SPESIAL_IMAP_PORT || 993);
+    try { sock = tls.connect(imapPort, imapHost, { servername: imapHost }); }
+    catch { return resolve(hasil); }
+    sock.setTimeout(20000, () => tutup(hasil));
+    sock.on("error", () => tutup(hasil));
+    let buf = "";
+    let langkah = 0;
+    const kirim = (teks) => { try { sock.write(teks + "\r\n"); } catch {} };
+    sock.on("data", (d) => {
+      buf += d.toString("utf8");
+      try {
+        if (langkah === 0 && buf.includes("* OK")) {
+          langkah = 1; buf = "";
+          kirim('a1 LOGIN "' + induk.email.replace(/"/g, "") + '" "' + induk.app.replace(/"/g, "") + '"');
+        } else if (langkah === 1) {
+          if (buf.includes("a1 NO") || buf.includes("a1 BAD")) { console.log("[spesial] IMAP Gmail induk: login ditolak"); return tutup(hasil); }
+          if (buf.includes("a1 OK")) { langkah = 2; buf = ""; kirim("a2 SELECT INBOX"); }
+        } else if (langkah === 2 && buf.includes("a2 OK")) {
+          langkah = 3; buf = "";
+          kirim('a3 SEARCH TO "' + alamatVariasi.replace(/"/g, "") + '"');
+        } else if (langkah === 3 && buf.includes("a3 OK")) {
+          const m = buf.match(/\* SEARCH([^\r\n]*)/);
+          const ids = m ? (m[1].match(/\d+/g) || []) : [];
+          buf = "";
+          if (!ids.length) { langkah = 5; kirim('a4 SEARCH SUBJECT "Verification"'); }
+          else { langkah = 4; kirim("a6 FETCH " + ids[ids.length - 1] + " BODY[TEXT]"); }
+        } else if (langkah === 5 && buf.includes("a4 OK")) {
+          const m = buf.match(/\* SEARCH([^\r\n]*)/);
+          const ids = m ? (m[1].match(/\d+/g) || []) : [];
+          buf = "";
+          if (!ids.length) return tutup(hasil);
+          langkah = 4; kirim("a6 FETCH " + ids[ids.length - 1] + " BODY[TEXT]");
+        } else if (langkah === 4 && buf.includes("a6 OK")) {
+          for (const m of buf.matchAll(/\b(\d{6})\b/g)) if (!hasil.includes(m[1])) hasil.push(m[1]);
+          return tutup(hasil);
+        }
+      } catch { return tutup(hasil); }
+    });
+  });
+}
+
 async function satuKaliSpesial(provider) {
   const apiBase = (provider.upstream_url || "").replace(/\/$/, "");
   if (!apiBase) return null;
@@ -1303,13 +1381,23 @@ async function satuKaliSpesial(provider) {
   const tempPassword = fn.charAt(0).toUpperCase() + fn.slice(1) + "#" + Math.floor(10000 + Math.random() * 90000) + hurufEkstra;
   // Generate email: coba sampai 3x dengan jeda (perbaikan 2026-10-30 — tempmail.ing sempat
   // menolak beruntun saat banyak panen jalan barengan; sekali gagal jangan langsung mati).
+  // Sumber email: Gmail induk (env SPESIAL_GMAIL_EMAIL + SPESIAL_GMAIL_APP_PASSWORD)
+  // didahulukan — variasi titik+tag acak dari induk, kode dibaca mesin dari inbox
+  // induk via IMAP (perintah Hestia 2026-10-30; jalur ini terbukti lolos uji 1 akun).
+  // Tanpa env itu, kembali ke tempmail.ing seperti sebelumnya.
+  const indukGmail = gmailIndukSpesial();
   let tempEmail = null;
-  for (let ga = 1; ga <= 3 && !tempEmail; ga++) {
-    tempEmail = await tempmailGenerate().catch(() => null);
-    if (!tempEmail) console.log(`[spesial] tempmail.ing generate gagal (percobaan ${ga}/3)`);
-    if (!tempEmail && ga < 3) await new Promise((res) => setTimeout(res, 3000));
+  if (indukGmail) {
+    tempEmail = variasiGmail(indukGmail.email);
+    console.log("[spesial] sumber email: Gmail induk");
+  } else {
+    for (let ga = 1; ga <= 3 && !tempEmail; ga++) {
+      tempEmail = await tempmailGenerate().catch(() => null);
+      if (!tempEmail) console.log(`[spesial] tempmail.ing generate gagal (percobaan ${ga}/3)`);
+      if (!tempEmail && ga < 3) await new Promise((res) => setTimeout(res, 3000));
+    }
+    if (!tempEmail) { console.log("[spesial] tempmail.ing generate gagal total"); return null; }
   }
-  if (!tempEmail) { console.log("[spesial] tempmail.ing generate gagal total"); return null; }
   // Cookie jar sederhana: sesi send-otp -> verify-otp -> login -> tokens/balance.
   const jar = {};
   const saveCookies = (res) => {
@@ -1357,9 +1445,10 @@ async function satuKaliSpesial(provider) {
     }
     if (!winProxy) { console.log("[spesial] send-otp gagal di semua proxy"); return null; }
     const winDisp = proxyDispatcher(winProxy);
-    // 3) Poll kode OTP dari inbox tempmail.ing (direct). Kumpulkan SEMUA kode 6 digit yang
+    // 3) Poll kode OTP dari inbox sumber terpilih. Kumpulkan SEMUA kode 6 digit yang
     // ditemukan (isi email bisa memuat lebih dari satu angka) untuk bahan percobaan verify.
     const ambilKodeInbox = async () => {
+      if (indukGmail) return imapAmbilKode(indukGmail, tempEmail);
       const ketemu = [];
       try {
         const rr = await fetch("https://api.tempmail.ing/api/emails/" + encodeURIComponent(tempEmail), { signal: AbortSignal.timeout(20000) });
