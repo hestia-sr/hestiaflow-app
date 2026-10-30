@@ -1525,7 +1525,7 @@ async function tryAutoRegister(provider, tempEmail, tempPassword) {
 
 const TIER_HARVEST_LIMIT = { gratis: 100, plus: 500, pro: 1500, premium: 5000, media: 500, media2: 50, spesial: 100 };
 const TIER_RANK = { gratis: 0, plus: 1, pro: 2, premium: 3, media: 0, media2: 0, spesial: 0 };
-const VOUCHER_DAYS = { plus: 3, pro: 7, premium: 14 };
+const VOUCHER_DAYS = { plus: 3, pro: 7, premium: 14, spesial: 3 };
 function effectiveTierSlug(u) { if (!u) return "gratis"; if (u.tier_expires_at && new Date(u.tier_expires_at) < new Date()) return "gratis"; return u.tier_slug || "gratis"; }
 function genVoucherCode() { const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; let s = ""; for (let i = 0; i < 16; i++) s += chars[crypto.randomInt(chars.length)]; return s.slice(0, 4) + "-" + s.slice(4, 8) + "-" + s.slice(8, 12) + "-" + s.slice(12, 16); }
 async function doHarvest({ userId, providerId, count }) {
@@ -1535,6 +1535,12 @@ async function doHarvest({ userId, providerId, count }) {
   const tier = db.prepare("SELECT * FROM tiers WHERE id=?").get(provider.tier_id);
   // KUNCI TOTAL (2026-10-29, perintah Hestia): Plus, Pro, Premium Segera Hadir — panen ditolak untuk semua, termasuk admin.
   if (tier && ["pro", "premium", "media2"].includes(tier.slug)) throw new Error("Tier " + (tier.name || tier.slug) + " sedang dikunci (Segera Hadir).");
+  // GERBANG VOUCHER SPESIAL (perintah Hestia 2026-10-30): tier Spesial hanya bisa dipanen user yang
+  // paket efektifnya Spesial (hasil tukar kode voucher dari admin). Admin (userId=null) bebas.
+  if (userId != null && tier && tier.slug === "spesial") {
+    const vu = db.prepare("SELECT COALESCE(tier_slug,'gratis') AS tier_slug,tier_expires_at FROM users WHERE id=?").get(userId);
+    if (effectiveTierSlug(vu) !== "spesial") throw new Error("Tier SPESIAL butuh kode voucher dari admin. Tukarkan kode voucher dulu ya.");
+  }
   // Tangga panen (aturan Hestia 2026-10-26): tiap paket panen tier-nya SENDIRI + semua tier di bawahnya
   // (Plus: Plus+Gratis · Pro: Pro+Plus+Gratis · Premium: Premium+Pro+Plus+Gratis).
   // Penegakannya = cek peringkat di bawah ini; tidak ada kunci khusus per tier lagi.
@@ -1799,12 +1805,12 @@ app.post("/api/voucher/redeem", requireAuth, (req, res) => {
   const expires = new Date(Date.now() + (v.duration_days || 0) * 86400000).toISOString();
   db.prepare("UPDATE vouchers SET used=1, used_by=?, used_at=datetime('now') WHERE id=?").run(req.user.id, v.id);
   db.prepare("UPDATE users SET tier_slug=?, tier_expires_at=? WHERE id=?").run(v.tier_slug, expires, req.user.id);
-  res.json({ ok: true, tierSlug: v.tier_slug, expiresAt: expires, message: `Vocher berhasil! Paket kamu jadi ${v.tier_slug === "premium" ? "Premium" : v.tier_slug === "pro" ? "Pro" : "Plus"} sampai ${new Date(expires).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}.` });
+  res.json({ ok: true, tierSlug: v.tier_slug, expiresAt: expires, message: `Vocher berhasil! Paket kamu jadi ${v.tier_slug === "premium" ? "Premium" : v.tier_slug === "pro" ? "Pro" : v.tier_slug === "spesial" ? "SPESIAL" : "Plus"} sampai ${new Date(expires).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}.` });
 });
 // Admin: buat / list / hapus vocher.
 app.post("/api/admin/vouchers", requireAdmin, (req, res) => {
   const slug = String(req.body.tierSlug || "").toLowerCase();
-  if (!["plus", "pro", "premium"].includes(slug)) return res.status(400).json({ ok: false, error: "invalid_tier" });
+  if (!["plus", "pro", "premium", "spesial"].includes(slug)) return res.status(400).json({ ok: false, error: "invalid_tier" });
   const code = genVoucherCode();
   const r = db.prepare("INSERT INTO vouchers (code,tier_slug,duration_days) VALUES (?,?,?)").run(code, slug, VOUCHER_DAYS[slug]);
   res.json({ ok: true, voucher: { id: r.lastInsertRowid, code, tierSlug: slug, durationDays: VOUCHER_DAYS[slug], used: false } });
@@ -2013,6 +2019,11 @@ function gatewayAuth(req) {
       if (t && t.slug === "premium") key._premium_locked = true;
       // KUNCI TOTAL (2026-10-29 malam, perintah Hestia): Media V2 dikunci dulu.
       if (t && t.slug === "media2") key._media2_locked = true;
+      // GERBANG VOUCHER SPESIAL (2026-10-30): key Spesial hanya jalan selama paket efektif pemiliknya Spesial.
+      if (t && t.slug === "spesial" && key.user_id) {
+        const ou = db.prepare("SELECT COALESCE(tier_slug,'gratis') AS tier_slug, tier_expires_at FROM users WHERE id=?").get(key.user_id);
+        if (!ou || effectiveTierSlug(ou) !== "spesial") key._spesial_locked = true;
+      }
     } catch {}
   }
   // Cek masa Gratis TOTAL (2 hari dari panen pertama) — 2026-10-18. Abis 2 hari, key mati total.
@@ -2043,6 +2054,7 @@ app.get("/v1/models", (req, res) => {
   if (key._pro_locked) return res.status(401).json({ error: { message: "Tier Pro sedang dalam perbaikan. Coba lagi nanti.", type: "invalid_request_error", param: null, code: "pro_locked" } });
   if (key._coming_soon) return res.status(401).json({ error: { message: "Segera Hadir!", type: "invalid_request_error", param: null, code: "coming_soon" } });
   if (key._premium_locked) return res.status(401).json({ error: { message: "Segera Hadir!", type: "invalid_request_error", param: null, code: "premium_locked" } });
+  if (key._spesial_locked) return res.status(401).json({ error: { message: "Paket SPESIAL kamu sudah habis. Tukarkan kode voucher baru dari admin untuk lanjut.", type: "invalid_request_error", param: null, code: "spesial_voucher_required" } });
   if (key._media2_locked) return res.status(401).json({ error: { message: "Segera Hadir!", type: "invalid_request_error", param: null, code: "media2_locked" } });
   if (key._expired) return res.status(401).json({ error: { message: "API key sudah kadaluarsa (Gratis: 2 hari). Panen lagi atau upgrade paket!", type: "invalid_request_error", param: null, code: "key_expired" } });
   const models = gatewayKeyModels(key);
@@ -2055,6 +2067,7 @@ app.get("/v1/credit", (req, res) => {
   if (key._pro_locked) return res.status(401).json({ error: { message: "Tier Pro sedang dalam perbaikan. Coba lagi nanti.", type: "invalid_request_error", param: null, code: "pro_locked" } });
   if (key._coming_soon) return res.status(401).json({ error: { message: "Segera Hadir!", type: "invalid_request_error", param: null, code: "coming_soon" } });
   if (key._premium_locked) return res.status(401).json({ error: { message: "Segera Hadir!", type: "invalid_request_error", param: null, code: "premium_locked" } });
+  if (key._spesial_locked) return res.status(401).json({ error: { message: "Paket SPESIAL kamu sudah habis. Tukarkan kode voucher baru dari admin untuk lanjut.", type: "invalid_request_error", param: null, code: "spesial_voucher_required" } });
   if (key._media2_locked) return res.status(401).json({ error: { message: "Segera Hadir!", type: "invalid_request_error", param: null, code: "media2_locked" } });
   if (key._expired) return res.status(401).json({ error: { message: "API key sudah kadaluarsa (Gratis: 2 hari). Panen lagi atau upgrade paket!", type: "invalid_request_error", param: null, code: "key_expired" } });
   const provider = key.provider_id ? db.prepare("SELECT brand_name, credit_note FROM providers WHERE id=?").get(key.provider_id) : null;
@@ -2095,6 +2108,7 @@ app.post("/v1/chat/completions", async (req, res) => {
   if (key._pro_locked) return res.status(401).json({ error: { message: "Tier Pro sedang dalam perbaikan. Coba lagi nanti.", type: "invalid_request_error", param: null, code: "pro_locked" } });
   if (key._coming_soon) return res.status(401).json({ error: { message: "Segera Hadir!", type: "invalid_request_error", param: null, code: "coming_soon" } });
   if (key._premium_locked) return res.status(401).json({ error: { message: "Segera Hadir!", type: "invalid_request_error", param: null, code: "premium_locked" } });
+  if (key._spesial_locked) return res.status(401).json({ error: { message: "Paket SPESIAL kamu sudah habis. Tukarkan kode voucher baru dari admin untuk lanjut.", type: "invalid_request_error", param: null, code: "spesial_voucher_required" } });
   if (key._media2_locked) return res.status(401).json({ error: { message: "Segera Hadir!", type: "invalid_request_error", param: null, code: "media2_locked" } });
   if (key._expired) return res.status(401).json({ error: { message: "API key sudah kadaluarsa (Gratis: 2 hari). Panen lagi atau upgrade paket!", type: "invalid_request_error", param: null, code: "key_expired" } });
   const { model, messages, stream } = req.body || {};
@@ -2268,6 +2282,7 @@ app.post("/v1/images/generations", async (req, res) => {
   if (!key) return res.status(401).json({ error: { message: "Incorrect API key provided.", type: "invalid_request_error", param: null, code: "invalid_api_key" } });
   if (key._pro_locked) return res.status(401).json({ error: { message: "Tier Pro sedang dalam perbaikan. Coba lagi nanti.", type: "invalid_request_error", param: null, code: "pro_locked" } });
   if (key._premium_locked) return res.status(401).json({ error: { message: "Segera Hadir!", type: "invalid_request_error", param: null, code: "premium_locked" } });
+  if (key._spesial_locked) return res.status(401).json({ error: { message: "Paket SPESIAL kamu sudah habis. Tukarkan kode voucher baru dari admin untuk lanjut.", type: "invalid_request_error", param: null, code: "spesial_voucher_required" } });
   if (key._media2_locked) return res.status(401).json({ error: { message: "Segera Hadir!", type: "invalid_request_error", param: null, code: "media2_locked" } });
   if (key._expired) return res.status(401).json({ error: { message: "API key sudah kadaluarsa. Panen lagi atau upgrade paket!", type: "invalid_request_error", param: null, code: "key_expired" } });
   // KUNCI TOTAL (2026-10-29): Premium Segera Hadir — key Stella ditolak di sini, hanya Orion (Media) yang jalan.
@@ -2479,6 +2494,7 @@ app.post("/v1/videos/generations", async (req, res) => {
   if (!key) return res.status(401).json({ error: { message: "Incorrect API key provided.", type: "invalid_request_error", param: null, code: "invalid_api_key" } });
   if (key._pro_locked) return res.status(401).json({ error: { message: "Tier Pro sedang dalam perbaikan. Coba lagi nanti.", type: "invalid_request_error", param: null, code: "pro_locked" } });
   if (key._premium_locked) return res.status(401).json({ error: { message: "Segera Hadir!", type: "invalid_request_error", param: null, code: "premium_locked" } });
+  if (key._spesial_locked) return res.status(401).json({ error: { message: "Paket SPESIAL kamu sudah habis. Tukarkan kode voucher baru dari admin untuk lanjut.", type: "invalid_request_error", param: null, code: "spesial_voucher_required" } });
   if (key._media2_locked) return res.status(401).json({ error: { message: "Segera Hadir!", type: "invalid_request_error", param: null, code: "media2_locked" } });
   if (key._expired) return res.status(401).json({ error: { message: "API key sudah kadaluarsa. Panen lagi atau upgrade paket!", type: "invalid_request_error", param: null, code: "key_expired" } });
   const provider = key.provider_id ? db.prepare("SELECT * FROM providers WHERE id=?").get(key.provider_id) : null;
