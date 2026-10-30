@@ -304,7 +304,7 @@ async function deleteAdminKey(id, btn) {
   catch (e) { alert("Gagal hapus key: " + e.message); btn.disabled = false; btn.textContent = "Hapus Key"; btn.dataset.armed = ""; }
 }
 function clampCount(el) { let v = parseInt(el.value, 10); if (isNaN(v)) v = 1; el.value = Math.max(1, Math.min(50, v)); }
-const TIER_HARVEST_LIMIT = { gratis: 100, plus: 500, pro: 1500, premium: 5000, media: 500, media2: 50, spesial: 100 };
+const TIER_HARVEST_LIMIT = { gratis: 100, plus: 500, pro: 1500, premium: 5000, media: 500, media2: 50, spesial: 25 };
 function userHarvestLimit() { const pid = Number(selectedHarvestProviderId); const item = TIERS.flatMap((t) => (t.providers || []).map((p) => ({ tier: t, p }))).find((x) => x.p.id === pid); return item ? (TIER_HARVEST_LIMIT[item.tier.slug] || 50) : 50; }
 function updateHarvestLimitUI() { const lim = userHarvestLimit(); const lbl = $("#harvestCountLabel"); if (lbl) lbl.textContent = `Jumlah akun (1–${lim})`; const el = $("#harvestCount"); if (el) { el.max = lim; el.value = Math.max(1, Math.min(lim, parseInt(el.value, 10) || 1)); } }
 function clampUserCount(el) { let v = parseInt(el.value, 10); if (isNaN(v)) v = 1; el.value = Math.max(1, Math.min(userHarvestLimit(), v)); }
