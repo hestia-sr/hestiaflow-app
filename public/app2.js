@@ -280,6 +280,13 @@ async function deleteMyKey(id, btn) {
   try { await api(`/api/my-keys/${id}`, { method: "DELETE" }); loadUser(); }
   catch (e) { alert("Gagal hapus: " + e.message); btn.disabled = false; btn.textContent = "Hapus"; btn.dataset.armed = ""; }
 }
+async function deleteAllAdminKeys() {
+  const total = (adminCache.stats && adminCache.stats.keys) || 0;
+  if (!confirm(`Hapus SEMUA ${total} API key secara PERMANEN? Semua key milik semua pengguna akan hilang dan tidak bisa dikembalikan.`)) return;
+  if (!confirm("Yakin 100%? Tindakan ini permanen dan tidak bisa dibatalkan.")) return;
+  try { const r = await api("/api/admin/keys/all", { method: "DELETE" }); alert(`Selesai: ${r.deletedKeys} key terhapus permanen.`); loadAdmin(); }
+  catch (e) { alert("Gagal hapus semua key: " + e.message); }
+}
 async function deleteAdminKey(id, btn) {
   if (!btn.dataset.armed) {
     btn.dataset.armed = "1"; btn.textContent = "Yakin Hapus?";
@@ -467,7 +474,7 @@ function renderAdminSections() {
   }
   if (adminSection === "kunci") {
     const keys = keyFilterUser ? adminCache.keys.filter((k) => String(k.ownerEmail) === String(keyFilterUser)) : adminCache.keys;
-    html = `<div id="admin-keys"><h3>Semua API key</h3>
+    html = `<div id="admin-keys"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><h3 style="margin:0">Semua API key</h3><button class="btn btn-danger" onclick="deleteAllAdminKeys()">HAPUS SEMUA</button></div>
       ${keyFilterUser ? `<div class="banner-filter">Filter: kunci milik <b>${esc(keyFilterUser)}</b> <button class="btn btn-ghost btn-sm" onclick="clearKeyFilter()">Tampilkan semua</button></div>` : ""}
       <div class="grid">${keys.map((k) => `<div class="card"><span class="chip">${esc(k.providerBrand || "")}</span><span class="chip">${esc(k.tierSlug || "")}</span>
         <p class="kv">Pemilik: <b>${esc(k.ownerEmail || "(pool)")}</b> · Prefix: ${esc(k.keyPrefix)} · Credit: ${k.credit != null ? esc(k.credit) : "Tidak dinyatakan"}</p>
