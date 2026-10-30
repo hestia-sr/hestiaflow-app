@@ -60,6 +60,12 @@ const STELLA_MODEL_MAP = {"nova-2-lite-v1": "amazon/nova-2-lite-v1", "nova-lite-
 const LYRA_MODELS = ["DeepSeek-V4-Flash", "MiniMax-M2.7", "GLM-5.3-Flash"];
 const LYRA_MODEL_MAP = { "DeepSeek-V4-Flash": "deepseek-ai/DeepSeek-V4-Flash-0731", "MiniMax-M2.7": "MiniMaxAI/MiniMax-M2.7", "GLM-5.3-Flash": "zai-org/GLM-5.3-Flash" };
 const LYRA_NOTES = { "DeepSeek-V4-Flash": "DeepSeek V4 Flash — kencang untuk chat dan coding.", "MiniMax-M2.7": "MiniMax M2.7 — ringan dan cepat.", "GLM-5.3-Flash": "GLM 5.3 Flash — reasoning ringan." };
+// SPESIAL (tier Spesial, 2026-10-30, perintah Hestia): tier promosi web — katalog = 9 model
+// chat yang TERBUKTI kebuka di akun trial upstream (tes operator 2026-10-30). Nama publik =
+// id upstream apa adanya (tanpa peta). upstream_url TIDAK ditulis di kode — diisi operator
+// lewat env PROVIDER_SPESIAL_UPSTREAM_URL (sync env sesudah seed()).
+const SPESIAL_MODELS = ["gpt-5.6-luna", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "deepseek-v4-flash", "deepseek-v4-pro", "qwen3.5-plus", "qwen3.6-plus", "Qwen3.5-397B-A17B", "MiniMax-M3"];
+const SPESIAL_NOTES = { "gpt-5.6-luna": "GPT-5.6 Luna — flagship ringan.", "gemini-3-flash-preview": "Gemini 3 Flash — cepat dan serbaguna.", "gemini-3.1-flash-lite-preview": "Gemini 3.1 Flash Lite — paling ringan.", "deepseek-v4-flash": "DeepSeek V4 Flash — kencang untuk chat dan coding.", "deepseek-v4-pro": "DeepSeek V4 Pro — reasoning lebih dalam.", "qwen3.5-plus": "Qwen 3.5 Plus — seimbang untuk semua tugas.", "qwen3.6-plus": "Qwen 3.6 Plus — versi lebih baru.", "Qwen3.5-397B-A17B": "Qwen 3.5 397B — model raksasa.", "MiniMax-M3": "MiniMax M3 — ringan dan cepat." };
 // MIRA (tier Media V2): katalog gambar saja — id publik = id upstream (nama model generik).
 // Harga per gambar dari katalog studio upstream (kredit); seedream-5-flash belum terpetakan -> tanpa angka.
 const MIRA_MODELS = ["z-image", "qwen-image-2-1", "nano-banana-2", "nano-banana-2-1", "nano-banana-2-lite", "nano-banana-pro", "gpt-image-2-5-flare", "gpt-image-2-5-sunburst", "gpt-image-2", "grok-imagine-image-2", "seedream-5-lite", "seedream-5-pro", "seedream-5-flash"];
@@ -209,6 +215,22 @@ function seed() {
     "Mira", "Gambar AI tanpa kartu, 18 kredit per akun + 15 tiap minggu.", 13, JSON.stringify(MIRA_MODELS), JSON.stringify(MIRA_NOTES), "18 kredit minggu pertama, lalu 15 kredit tiap minggu per akun.", 18, 1);
   db.prepare("UPDATE providers SET tier_id=(SELECT id FROM tiers WHERE slug='media2'), tagline=?, model_count=?, model_list_json=?, model_notes_json=?, credit_note=?, default_credit=? WHERE brand_name='Mira'").run(
     "Gambar AI tanpa kartu, 18 kredit per akun + 15 tiap minggu.", 13, JSON.stringify(MIRA_MODELS), JSON.stringify(MIRA_NOTES), "18 kredit minggu pertama, lalu 15 kredit tiap minggu per akun.", 18);
+  // Migrasi Spesial (tier promosi, 2026-10-30, perintah Hestia): tier BARU buat promosi web —
+  // gratis, 1 akun panen = 1 key, 300 kredit per akun, 1 request = 1 kredit, 6 request/menit.
+  // Posisi etalase: tepat di bawah Gratis (sort_order 2); tier lain geser ke bawah (unconditional,
+  // jalan tiap startup, sesudah blok urutan lama supaya hasil akhirnya konsisten).
+  // upstream_url TIDAK ditulis di kode — diisi operator lewat env PROVIDER_SPESIAL_UPSTREAM_URL.
+  db.prepare("INSERT OR IGNORE INTO tiers (slug,name,audience_label,badge,max_models,sort_order) VALUES ('spesial','SPESIAL','PROMOSI UNTUK SEMUA','TIER SPESIAL',NULL,2)").run();
+  db.prepare("UPDATE tiers SET sort_order=2 WHERE slug='spesial'").run();
+  db.prepare("UPDATE tiers SET sort_order=3 WHERE slug='plus'").run();
+  db.prepare("UPDATE tiers SET sort_order=4 WHERE slug='pro'").run();
+  db.prepare("UPDATE tiers SET sort_order=5 WHERE slug='premium'").run();
+  db.prepare("UPDATE tiers SET sort_order=6 WHERE slug='media'").run();
+  db.prepare("UPDATE tiers SET sort_order=7 WHERE slug='media2'").run();
+  db.prepare("INSERT INTO providers (tier_id,brand_name,tagline,model_count,model_list_json,model_notes_json,credit_note,default_credit,sort_order) SELECT (SELECT id FROM tiers WHERE slug='spesial'),?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM providers WHERE brand_name='Spesial')").run(
+    "Spesial", "1 akun 300 credit.", 9, JSON.stringify(SPESIAL_MODELS), JSON.stringify(SPESIAL_NOTES), "1 request 1 credit · 6x request/menit.", 300, 1);
+  db.prepare("UPDATE providers SET tier_id=(SELECT id FROM tiers WHERE slug='spesial'), tagline=?, model_count=?, model_list_json=?, model_notes_json=?, credit_note=?, default_credit=? WHERE brand_name='Spesial'").run(
+    "1 akun 300 credit.", 9, JSON.stringify(SPESIAL_MODELS), JSON.stringify(SPESIAL_NOTES), "1 request 1 credit · 6x request/menit.", 300);
   const tierCount = db.prepare("SELECT COUNT(*) c FROM tiers").get().c;
   if (tierCount > 0) return;
   const insTier = db.prepare("INSERT INTO tiers (slug,name,audience_label,badge,max_models,sort_order) VALUES (?,?,?,?,?,?)");
@@ -1218,6 +1240,157 @@ async function tryAutoRegisterOrion(provider) {
   } catch (e) { console.log("[orion] exception", e && e.message); return null; }
 }
 
+// Auto-register Spesial (tier Spesial, 2026-10-30). Flow TERBUKTI pakai script operator
+// di hari yang sama (semua langkah API polos, tanpa browser, tanpa captcha):
+// 1. Email tempmail.ing (direct).
+// 2. POST {site}/api/auth/send-otp {email, username} LEWAT PROXY — aturan panen umum
+//    (proxy dicek hidup + UA acak + nama acak; hanya Lyra yang direct atas perintah operator).
+// 3. Kode 6 digit dipolling dari inbox tempmail.ing (direct).
+// 4. POST {site}/api/auth/verify-otp {otp, email, password, username, inviteCode:"", referralCode:""}
+//    lewat proxy pemenang -> sesi (cookie), diperkuat login ulang.
+// 5. GET {site}/api/user/tokens (sesi) -> API key yang otomatis terbit saat daftar.
+// 6. GET {site}/api/credits/balance (sesi) -> saldo awal akun (300).
+// 7. Verifikasi key: GET {apiBase}/models pakai key.
+// siteBase diturunkan dari provider.upstream_url (env) — domain asli tidak ditulis di kode.
+const _spesialBadProxy = new Set();
+
+async function tryAutoRegisterSpesial(provider) {
+  const apiBase = (provider.upstream_url || "").replace(/\/$/, "");
+  if (!apiBase) return null;
+  const siteBase = apiBase.replace(/\/v1$/, "").replace("://api.", "://");
+  if (siteBase === apiBase) { console.log("[spesial] bentuk upstream_url tidak dikenal"); return null; }
+  const firstPool = ["bima", "raka", "dimas", "fajar", "galih", "rizky", "yoga", "andra", "bagus", "cahya"];
+  const lastPool = ["pratama", "saputra", "nugroho", "pamungkas", "ramadhan", "setiawan", "utama", "wicaksono"];
+  const fn = firstPool[Math.floor(Math.random() * firstPool.length)];
+  const ln = lastPool[Math.floor(Math.random() * lastPool.length)];
+  const username = fn + ln;
+  const hurufEkstra = [...crypto.randomBytes(2)].map((b) => "abcdefghijklmnopqrstuvwxyz"[b % 26]).join("");
+  const tempPassword = fn.charAt(0).toUpperCase() + fn.slice(1) + "#" + Math.floor(10000 + Math.random() * 90000) + hurufEkstra;
+  let tempEmail = null;
+  try {
+    const gm = await fetch("https://api.tempmail.ing/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ duration: 10 }), signal: AbortSignal.timeout(20000) });
+    const gj = gm.ok ? await gm.json().catch(() => null) : null;
+    tempEmail = gj && gj.email && gj.email.address ? gj.email.address : null;
+    if (!tempEmail) { console.log("[spesial] tempmail.ing generate gagal"); return null; }
+  } catch (e) { console.log("[spesial] tempmail.ing exception", e && e.message); return null; }
+  // Cookie jar sederhana: sesi send-otp -> verify-otp -> login -> tokens/balance.
+  const jar = {};
+  const saveCookies = (res) => {
+    try {
+      for (const sc of (res.headers.getSetCookie ? res.headers.getSetCookie() : [])) {
+        const pair = sc.split(";")[0];
+        const idx = pair.indexOf("=");
+        if (idx > 0) jar[pair.slice(0, idx).trim()] = pair.slice(idx + 1).trim();
+      }
+    } catch {}
+  };
+  const cookieHdr = () => Object.entries(jar).map(([k, v]) => k + "=" + v).join("; ");
+  try {
+    const proxies = await fetchProxyHidup(siteBase, 25, 100);
+    console.log(`[spesial] proxy OK terkumpul: ${proxies.length}`);
+    if (!proxies.length) { console.log("[spesial] tidak ada proxy hidup — gagal jujur (tanpa fallback direct)"); return null; }
+    // 2) send-otp lewat proxy (maks 4x coba).
+    let winProxy = null;
+    const sudahCoba = new Set();
+    let tries = 0;
+    while (tries < 4) {
+      const eligible = proxies.filter((x) => !_spesialBadProxy.has(x) && !sudahCoba.has(x));
+      if (!eligible.length) break;
+      const p = eligible[Math.floor(Math.random() * eligible.length)];
+      sudahCoba.add(p);
+      if (!(await cekProxyHidup(siteBase, p))) continue;
+      tries++;
+      try {
+        const r = await fetch(siteBase + "/api/auth/send-otp", {
+          method: "POST", headers: { "Content-Type": "application/json", "User-Agent": randUA() },
+          body: JSON.stringify({ email: tempEmail, username }),
+          dispatcher: proxyDispatcher(p), signal: AbortSignal.timeout(25000)
+        });
+        saveCookies(r);
+        const j = await r.json().catch(() => null);
+        console.log(`[spesial] send-otp status=${r.status} via=proxy${tries}`);
+        if (r.ok && j && j.success === true) { winProxy = p; break; }
+        if (r.status === 403 || r.status === 429) _spesialBadProxy.add(p);
+        if (r.status !== 403 && r.status !== 429) break;
+      } catch (e) { console.log(`[spesial] send-otp via=proxy${tries} exception ${e && e.message ? e.message : "unknown"}`); }
+    }
+    if (!winProxy) { console.log("[spesial] send-otp gagal di semua proxy"); return null; }
+    const winDisp = proxyDispatcher(winProxy);
+    // 3) Poll kode OTP dari inbox tempmail.ing (direct).
+    let code = null;
+    const deadline = Date.now() + 110000;
+    while (Date.now() < deadline && !code) {
+      try {
+        const rr = await fetch("https://api.tempmail.ing/api/emails/" + encodeURIComponent(tempEmail), { signal: AbortSignal.timeout(20000) });
+        const jj = rr.ok ? await rr.json().catch(() => null) : null;
+        for (const em of (jj && jj.emails) || []) {
+          const blob = String((em && em.subject) || "") + " " + String((em && (em.body || em.text)) || "");
+          const m = blob.match(/\b(\d{6})\b/);
+          if (m) { code = m[1]; break; }
+        }
+      } catch {}
+      if (!code) await new Promise((res) => setTimeout(res, 8000));
+    }
+    if (!code) { console.log("[spesial] kode OTP tidak datang"); return null; }
+    // 4) verify-otp lewat proxy pemenang.
+    let verifiedOtp = false;
+    try {
+      const r = await fetch(siteBase + "/api/auth/verify-otp", {
+        method: "POST", headers: { "Content-Type": "application/json", "User-Agent": randUA(), Cookie: cookieHdr() },
+        body: JSON.stringify({ otp: code, email: tempEmail, password: tempPassword, username, inviteCode: "", referralCode: "" }),
+        dispatcher: winDisp, signal: AbortSignal.timeout(25000)
+      });
+      saveCookies(r);
+      const j = await r.json().catch(() => null);
+      console.log(`[spesial] verify-otp status=${r.status} ok=${!!(j && j.success)}`);
+      verifiedOtp = !!(r.ok && j && j.success === true);
+    } catch (e) { console.log(`[spesial] verify-otp exception ${e && e.message ? e.message : "unknown"}`); }
+    if (!verifiedOtp) { console.log("[spesial] verify-otp gagal"); return null; }
+    // Perkuat sesi: login ulang (endpoint terbukti) lewat proxy pemenang.
+    try {
+      const lg = await fetch(siteBase + "/api/auth/login", {
+        method: "POST", headers: { "Content-Type": "application/json", "User-Agent": randUA(), Cookie: cookieHdr() },
+        body: JSON.stringify({ email: tempEmail, password: tempPassword }),
+        dispatcher: winDisp, signal: AbortSignal.timeout(25000)
+      });
+      saveCookies(lg);
+      await lg.json().catch(() => null);
+      console.log(`[spesial] login status=${lg.status}`);
+    } catch (e) { console.log(`[spesial] login exception ${e && e.message ? e.message : "unknown"}`); }
+    // 5+6) Ambil API key + saldo (sesi; proxy pemenang dulu, lalu proxy kolam lain bila putus).
+    let key = null, balance = null;
+    const sessProxies = [winProxy, ...proxies.filter((x) => x !== winProxy && !_spesialBadProxy.has(x)).slice(0, 2)];
+    for (const lp of sessProxies) {
+      try {
+        const disp = proxyDispatcher(lp);
+        const tk = await fetch(siteBase + "/api/user/tokens", { headers: { "User-Agent": randUA(), Cookie: cookieHdr() }, dispatcher: disp, signal: AbortSignal.timeout(25000) });
+        saveCookies(tk);
+        const tj = tk.ok ? await tk.json().catch(() => null) : null;
+        const items = tj && tj.data && Array.isArray(tj.data.items) ? tj.data.items : [];
+        if (items.length && items[0].key) key = items[0].key;
+        const bl = await fetch(siteBase + "/api/credits/balance", { headers: { "User-Agent": randUA(), Cookie: cookieHdr() }, dispatcher: disp, signal: AbortSignal.timeout(25000) });
+        const bj = bl.ok ? await bl.json().catch(() => null) : null;
+        if (bj && bj.data && typeof bj.data.balance === "number") balance = bj.data.balance;
+        console.log(`[spesial] tokens status=${tk.status} hasKey=${!!key} balance=${balance}`);
+        if (key) break;
+      } catch (e) { console.log(`[spesial] ambil key exception ${e && e.message ? e.message : "unknown"}`); }
+    }
+    if (!key) { console.log("[spesial] API key tidak didapat"); return null; }
+    // 7) Verifikasi key via /v1/models (proxy pemenang dulu, direct cadangan — pola RooyAI).
+    let verified = false;
+    try {
+      const vr = await fetch(apiBase + "/models", { headers: { Authorization: "Bearer " + key, "User-Agent": randUA() }, dispatcher: winDisp, signal: AbortSignal.timeout(25000) });
+      verified = vr.ok;
+      if (!verified) {
+        const vd = await fetch(apiBase + "/models", { headers: { Authorization: "Bearer " + key, "User-Agent": randUA() }, signal: AbortSignal.timeout(25000) });
+        verified = vd.ok;
+      }
+    } catch {}
+    console.log(`[spesial] auto-register ok, verified=${verified} balance=${balance}`);
+    return { upstreamApiKey: key, upstreamBaseUrl: apiBase, tempEmail, tempPassword, live: verified };
+  } catch (e) { console.log("[spesial] exception", e && e.message); return null; }
+}
+
 // Auto-register a real provider account (server-side, no admin config).
 // Tries generic signup/login/key endpoints against the provider's upstream_url
 // (operator-configured in DB). Returns { upstreamApiKey, upstreamBaseUrl } or null.
@@ -1262,6 +1435,13 @@ async function tryAutoRegister(provider, tempEmail, tempPassword) {
   if ((provider.brand_name || "").toLowerCase() === "lyra") {
     const ly = await tryAutoRegisterLyra(provider);
     if (ly) return ly;
+    return null;
+  }
+  // Spesial (tier Spesial): OTP email (send-otp -> verify-otp) lewat proxy -> key otomatis
+  // dari /api/user/tokens. Flow terbukti pakai script operator 2026-10-30.
+  if ((provider.brand_name || "").toLowerCase() === "spesial") {
+    const sp = await tryAutoRegisterSpesial(provider);
+    if (sp) return sp;
     return null;
   }
   // Mira (Media V2): mesin panen BELUM tersedia — signup website dilindungi
@@ -1343,8 +1523,8 @@ async function tryAutoRegister(provider, tempEmail, tempPassword) {
   return { upstreamApiKey: token, upstreamBaseUrl: base };
 }
 
-const TIER_HARVEST_LIMIT = { gratis: 100, plus: 500, pro: 1500, premium: 5000, media: 500, media2: 50 };
-const TIER_RANK = { gratis: 0, plus: 1, pro: 2, premium: 3, media: 0, media2: 0 };
+const TIER_HARVEST_LIMIT = { gratis: 100, plus: 500, pro: 1500, premium: 5000, media: 500, media2: 50, spesial: 100 };
+const TIER_RANK = { gratis: 0, plus: 1, pro: 2, premium: 3, media: 0, media2: 0, spesial: 0 };
 const VOUCHER_DAYS = { plus: 3, pro: 7, premium: 14 };
 function effectiveTierSlug(u) { if (!u) return "gratis"; if (u.tier_expires_at && new Date(u.tier_expires_at) < new Date()) return "gratis"; return u.tier_slug || "gratis"; }
 function genVoucherCode() { const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; let s = ""; for (let i = 0; i < 16; i++) s += chars[crypto.randomInt(chars.length)]; return s.slice(0, 4) + "-" + s.slice(4, 8) + "-" + s.slice(8, 12) + "-" + s.slice(12, 16); }
@@ -1403,6 +1583,8 @@ async function doHarvest({ userId, providerId, count }) {
   if (provider && provider.brand_name === "Stella") { models = STELLA_PUBLIC_MODELS.slice(); source = "configured"; }
   // Lyra: sama — selalu daftar publik pendek perintah operator, jangan daftar mentah upstream.
   if (provider && provider.brand_name === "Lyra") { models = LYRA_MODELS.slice(); source = "configured"; }
+  // Spesial: sama — selalu katalog 9 model yang terbukti kebuka di trial upstream.
+  if (provider && provider.brand_name === "Spesial") { models = SPESIAL_MODELS.slice(); source = "configured"; }
   // Gratis tier: enforce max 2 models.
   if (tier && tier.max_models != null && models.length > tier.max_models) models = models.slice(0, tier.max_models);
   const logs = []; const keys = [];
