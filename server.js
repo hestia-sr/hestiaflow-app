@@ -60,6 +60,15 @@ const STELLA_MODEL_MAP = {"nova-2-lite-v1": "amazon/nova-2-lite-v1", "nova-lite-
 const LYRA_MODELS = ["DeepSeek-V4-Flash", "MiniMax-M2.7", "GLM-5.3-Flash"];
 const LYRA_MODEL_MAP = { "DeepSeek-V4-Flash": "deepseek-ai/DeepSeek-V4-Flash-0731", "MiniMax-M2.7": "MiniMaxAI/MiniMax-M2.7", "GLM-5.3-Flash": "zai-org/GLM-5.3-Flash" };
 const LYRA_NOTES = { "DeepSeek-V4-Flash": "DeepSeek V4 Flash — kencang untuk chat dan coding.", "MiniMax-M2.7": "MiniMax M2.7 — ringan dan cepat.", "GLM-5.3-Flash": "GLM 5.3 Flash — reasoning ringan." };
+// VELA (cadangan DIAM tier Gratis, perintah Hestia 2026-10-30): provider cadangan di tier
+// yang sama dengan Lyra, katalog + peta model IDENTIK Lyra (id upstream sama persis,
+// terbukti dari recon operator). TIDAK tampil di daftar publik (lihat HIDDEN_PROVIDER_BRANDS);
+// panen hanya lewat panel admin. default_credit 4.000.000 = jatah token mingguan akun gratis.
+const VELA_MODELS = ["DeepSeek-V4-Flash", "MiniMax-M2.7", "GLM-5.3-Flash"];
+const VELA_MODEL_MAP = { "DeepSeek-V4-Flash": "deepseek-ai/DeepSeek-V4-Flash-0731", "MiniMax-M2.7": "MiniMaxAI/MiniMax-M2.7", "GLM-5.3-Flash": "zai-org/GLM-5.3-Flash" };
+const VELA_NOTES = { "DeepSeek-V4-Flash": "DeepSeek V4 Flash — kencang untuk chat dan coding.", "MiniMax-M2.7": "MiniMax M2.7 — ringan dan cepat.", "GLM-5.3-Flash": "GLM 5.3 Flash — reasoning ringan." };
+// Provider yang disembunyikan dari daftar publik (cadangan diam operator).
+const HIDDEN_PROVIDER_BRANDS = ["Vela"];
 // SPESIAL (tier Spesial, 2026-10-30, perintah Hestia): tier promosi web — katalog = 9 model
 // chat yang TERBUKTI kebuka di akun trial upstream (tes operator 2026-10-30). Nama publik =
 // id upstream apa adanya (tanpa peta). upstream_url TIDAK ditulis di kode — diisi operator
@@ -199,6 +208,12 @@ function seed() {
     "Lyra", "Gratis Selamanya", 3, JSON.stringify(LYRA_MODELS), JSON.stringify(LYRA_NOTES), "Gratis Selamanya", 20000000, 2);
   db.prepare("UPDATE providers SET tier_id=(SELECT id FROM tiers WHERE slug='gratis'), tagline=?, model_count=?, model_list_json=?, model_notes_json=?, credit_note=?, default_credit=? WHERE brand_name='Lyra'").run(
     "Gratis Selamanya", 3, JSON.stringify(LYRA_MODELS), JSON.stringify(LYRA_NOTES), "Gratis Selamanya", 20000000);
+  // Vela: cadangan diam tier Gratis (perintah Hestia 2026-10-30) — seed meniru Lyra persis,
+  // sort 3 (di bawah Lyra), default_credit = jatah token mingguan akun gratis upstream.
+  db.prepare("INSERT INTO providers (tier_id,brand_name,tagline,model_count,model_list_json,model_notes_json,credit_note,default_credit,sort_order) SELECT (SELECT id FROM tiers WHERE slug='gratis'),?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM providers WHERE brand_name='Vela')").run(
+    "Vela", "Gratis Selamanya", 3, JSON.stringify(VELA_MODELS), JSON.stringify(VELA_NOTES), "Gratis Selamanya", 4000000, 3);
+  db.prepare("UPDATE providers SET tier_id=(SELECT id FROM tiers WHERE slug='gratis'), tagline=?, model_count=?, model_list_json=?, model_notes_json=?, credit_note=?, default_credit=?, sort_order=? WHERE brand_name='Vela'").run(
+    "Gratis Selamanya", 3, JSON.stringify(VELA_MODELS), JSON.stringify(VELA_NOTES), "Gratis Selamanya", 4000000, 3);
   // Tier Gratis harus muat katalog 3 model (Lyra).
   db.prepare("UPDATE tiers SET max_models=? WHERE slug=?").run(3, "gratis");
   // Migrasi 2026-10-29 (perintah Hestia): Luna DIHAPUS dari HestiaFlow — tier Gratis tinggal Lyra.
@@ -1467,6 +1482,148 @@ async function tryAutoRegisterSpesial(provider) {
   } catch (e) { console.log("[spesial] exception", e && e.message); return null; }
 }
 
+const _velaBadProxy = new Set();
+// Vela (cadangan DIAM tier Gratis): daftar akun upstream lewat proxy (pola RooyAI/Spesial) —
+// register {email,password} -> link verifikasi di inbox tempmail.ing -> GET link -> login
+// (balas api_key) -> klaim promo referral operator -> buat key khusus -> verifikasi /v1/models.
+// Alur TERBUKTI E2E oleh recon operator 2026-10-30. Tanpa proxy = gagal jujur, tanpa fallback.
+async function tryAutoRegisterVela(provider) {
+  const apiBase = (provider.upstream_url || "").replace(/\/$/, "");
+  if (!apiBase) return null;
+  const siteBase = apiBase.replace(/\/v1$/, "");
+  if (siteBase === apiBase) { console.log("[vela] bentuk upstream_url tidak dikenal"); return null; }
+  const refCode = process.env.VELA_REF_CODE || "SPM7FDY";
+  const namaPool = ["raka", "dimas", "putri", "sari", "budi", "ayu", "fajar", "nadia", "rizki", "dewi", "bagas", "citra"];
+  const nama = namaPool[Math.floor(Math.random() * namaPool.length)];
+  const hurufEkstra = [...crypto.randomBytes(2)].map((b) => "abcdefghijklmnopqrstuvwxyz"[b % 26]).join("");
+  const tempPassword = nama.charAt(0).toUpperCase() + nama.slice(1) + "#" + Math.floor(10000 + Math.random() * 90000) + hurufEkstra;
+  const tempEmail = await tempmailGenerate().catch(() => null);
+  if (!tempEmail) { console.log("[vela] tempmail.ing generate gagal"); return null; }
+  // Cookie jar + SATU UA untuk seluruh sesi (pelajaran dari mesin Spesial).
+  const jar = {};
+  const saveCookies = (res) => {
+    try {
+      for (const sc of (res.headers.getSetCookie ? res.headers.getSetCookie() : [])) {
+        const pair = sc.split(";")[0];
+        const idx = pair.indexOf("=");
+        if (idx > 0) jar[pair.slice(0, idx).trim()] = pair.slice(idx + 1).trim();
+      }
+    } catch {}
+  };
+  const cookieHdr = () => Object.entries(jar).map(([k, v]) => k + "=" + v).join("; ");
+  const ua = randUA();
+  try {
+    const proxies = await fetchProxyHidup(siteBase, 25, 100);
+    console.log(`[vela] proxy OK terkumpul: ${proxies.length}`);
+    if (!proxies.length) { console.log("[vela] tidak ada proxy hidup — gagal jujur (tanpa fallback direct)"); return null; }
+    // 1) Register lewat proxy (maks 4x coba).
+    let winProxy = null;
+    const sudahCoba = new Set();
+    let tries = 0;
+    while (tries < 4) {
+      const eligible = proxies.filter((x) => !_velaBadProxy.has(x) && !sudahCoba.has(x));
+      if (!eligible.length) break;
+      const p = eligible[Math.floor(Math.random() * eligible.length)];
+      sudahCoba.add(p);
+      if (!(await cekProxyHidup(siteBase, p))) continue;
+      tries++;
+      try {
+        const r = await fetch(siteBase + "/api/auth/register", {
+          method: "POST", headers: { "Content-Type": "application/json", "User-Agent": ua },
+          body: JSON.stringify({ email: tempEmail, password: tempPassword }),
+          dispatcher: proxyDispatcher(p), signal: AbortSignal.timeout(25000)
+        });
+        saveCookies(r);
+        await r.json().catch(() => null);
+        console.log(`[vela] register status=${r.status} via=proxy${tries}`);
+        if (r.ok) { winProxy = p; break; }
+        if (r.status === 403 || r.status === 429) _velaBadProxy.add(p);
+        if (r.status !== 403 && r.status !== 429) break;
+      } catch (e) { console.log(`[vela] register via=proxy${tries} exception ${e && e.message ? e.message : "unknown"}`); }
+    }
+    if (!winProxy) { console.log("[vela] register gagal di semua proxy"); return null; }
+    const winDisp = proxyDispatcher(winProxy);
+    // 2) Poll link verifikasi dari inbox tempmail.ing (direct, pola Lyra).
+    const cariLinkVerifikasi = async () => {
+      try {
+        const rr = await fetch("https://api.tempmail.ing/api/emails/" + encodeURIComponent(tempEmail), { signal: AbortSignal.timeout(20000) });
+        const jj = rr.ok ? await rr.json().catch(() => null) : null;
+        for (const em of (jj && jj.emails) || []) {
+          const blob = JSON.stringify(em || {});
+          const mm = blob.match(/https?:\/\/[A-Za-z0-9.-]+\/api\/auth\/verify\?[^"\s<>\\]+/);
+          if (mm) return mm[0].replace(/&amp;/g, "&");
+        }
+      } catch {}
+      return null;
+    };
+    let verifyLink = null;
+    const deadline = Date.now() + 110000;
+    while (Date.now() < deadline && !verifyLink) {
+      verifyLink = await cariLinkVerifikasi();
+      if (!verifyLink) await new Promise((res) => setTimeout(res, 6000));
+    }
+    if (!verifyLink) { console.log("[vela] link verifikasi tidak datang"); return null; }
+    // 3) Buka link verifikasi lewat proxy pemenang (redirect diikuti fetch).
+    try {
+      const vr = await fetch(verifyLink, { headers: { "User-Agent": ua, Cookie: cookieHdr() }, dispatcher: winDisp, signal: AbortSignal.timeout(25000) });
+      saveCookies(vr);
+      await vr.text().catch(() => null);
+      console.log(`[vela] verify-link status=${vr.status}`);
+    } catch (e) { console.log(`[vela] verify-link exception ${e && e.message ? e.message : "unknown"}`); }
+    // 4) Login (balasan memuat api_key akun).
+    let loginKey = null;
+    try {
+      const lg = await fetch(siteBase + "/api/auth/login", {
+        method: "POST", headers: { "Content-Type": "application/json", "User-Agent": ua, Cookie: cookieHdr() },
+        body: JSON.stringify({ email: tempEmail, password: tempPassword }),
+        dispatcher: winDisp, signal: AbortSignal.timeout(25000)
+      });
+      saveCookies(lg);
+      const lj = await lg.json().catch(() => null);
+      loginKey = lj && (lj.api_key || (lj.data && lj.data.api_key) || lj.key || (lj.data && lj.data.key)) || null;
+      console.log(`[vela] login status=${lg.status} hasKey=${!!loginKey}`);
+    } catch (e) { console.log(`[vela] login exception ${e && e.message ? e.message : "unknown"}`); }
+    if (!loginKey) { console.log("[vela] login gagal / api_key tidak ada"); return null; }
+    // 5) Klaim promo referral operator (bonus saldo akun + akun utama operator).
+    try {
+      const cl = await fetch(siteBase + "/billing/promo/claim", {
+        method: "POST", headers: { "Content-Type": "application/json", "User-Agent": ua, Cookie: cookieHdr() },
+        body: JSON.stringify({ referred_by: refCode }),
+        dispatcher: winDisp, signal: AbortSignal.timeout(25000)
+      });
+      saveCookies(cl);
+      await cl.json().catch(() => null);
+      console.log(`[vela] claim status=${cl.status}`);
+    } catch (e) { console.log(`[vela] claim exception ${e && e.message ? e.message : "unknown"}`); }
+    // 6) Buat key khusus; fallback ke api_key dari login bila pembuatan key tidak membalas key.
+    let finalKey = null;
+    try {
+      const ck = await fetch(siteBase + "/api/keys", {
+        method: "POST", headers: { "Content-Type": "application/json", "User-Agent": ua, Cookie: cookieHdr() },
+        body: JSON.stringify({ key_name: nama + Math.floor(1000 + Math.random() * 9000) }),
+        dispatcher: winDisp, signal: AbortSignal.timeout(25000)
+      });
+      saveCookies(ck);
+      const cj = await ck.json().catch(() => null);
+      finalKey = (cj && (cj.api_key || cj.key || (cj.data && (cj.data.api_key || cj.data.key)) || (Array.isArray(cj.data) && cj.data[0] && (cj.data[0].api_key || cj.data[0].key)))) || null;
+      console.log(`[vela] buat key status=${ck.status} hasKey=${!!finalKey}`);
+    } catch (e) { console.log(`[vela] buat key exception ${e && e.message ? e.message : "unknown"}`); }
+    if (!finalKey) finalKey = loginKey;
+    // 7) Verifikasi key via /v1/models (proxy pemenang dulu, direct cadangan — pola RooyAI).
+    let verified = false;
+    try {
+      const vr2 = await fetch(apiBase + "/models", { headers: { Authorization: "Bearer " + finalKey, "User-Agent": ua }, dispatcher: winDisp, signal: AbortSignal.timeout(25000) });
+      verified = vr2.ok;
+      if (!verified) {
+        const vd = await fetch(apiBase + "/models", { headers: { Authorization: "Bearer " + finalKey, "User-Agent": ua }, signal: AbortSignal.timeout(25000) });
+        verified = vd.ok;
+      }
+    } catch {}
+    console.log(`[vela] auto-register ok, verified=${verified}`);
+    return { upstreamApiKey: finalKey, upstreamBaseUrl: apiBase, tempEmail, tempPassword, live: verified };
+  } catch (e) { console.log("[vela] exception", e && e.message); return null; }
+}
+
 // Auto-register a real provider account (server-side, no admin config).
 // Tries generic signup/login/key endpoints against the provider's upstream_url
 // (operator-configured in DB). Returns { upstreamApiKey, upstreamBaseUrl } or null.
@@ -1518,6 +1675,13 @@ async function tryAutoRegister(provider, tempEmail, tempPassword) {
   if ((provider.brand_name || "").toLowerCase() === "spesial") {
     const sp = await tryAutoRegisterSpesial(provider);
     if (sp) return sp;
+    return null;
+  }
+  // Vela (cadangan diam Gratis): register + link verifikasi email lewat proxy -> login
+  // (api_key) -> klaim promo referral -> key khusus. Alur terbukti recon operator 2026-10-30.
+  if ((provider.brand_name || "").toLowerCase() === "vela") {
+    const ve = await tryAutoRegisterVela(provider);
+    if (ve) return ve;
     return null;
   }
   // Mira (Media V2): mesin panen BELUM tersedia — signup website dilindungi
@@ -1665,6 +1829,8 @@ async function doHarvest({ userId, providerId, count }) {
   if (provider && provider.brand_name === "Stella") { models = STELLA_PUBLIC_MODELS.slice(); source = "configured"; }
   // Lyra: sama — selalu daftar publik pendek perintah operator, jangan daftar mentah upstream.
   if (provider && provider.brand_name === "Lyra") { models = LYRA_MODELS.slice(); source = "configured"; }
+  // Vela: sama — daftar publik pendek yang identik dengan Lyra.
+  if (provider && provider.brand_name === "Vela") { models = VELA_MODELS.slice(); source = "configured"; }
   // Spesial: sama — selalu katalog 9 model yang terbukti kebuka di trial upstream.
   if (provider && provider.brand_name === "Spesial") { models = SPESIAL_MODELS.slice(); source = "configured"; }
   // Gratis tier: enforce max 2 models.
@@ -1764,7 +1930,7 @@ app.get("/api/me", (req, res) => {
   res.json({ ok: true, user: u || null, oauthConfigured: Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) });
 });
 app.get("/api/public/providers", (req, res) => {
-  const rows = db.prepare("SELECT * FROM providers ORDER BY tier_id, sort_order").all();
+  const rows = db.prepare("SELECT * FROM providers ORDER BY tier_id, sort_order").all().filter((p) => !HIDDEN_PROVIDER_BRANDS.includes(p.brand_name));
   res.json({ ok: true, providers: rows.map(publicProvider) });
 });
 app.get("/api/public/providers/:id/models", (req, res) => {
@@ -1779,7 +1945,7 @@ app.get("/api/public/providers/:id/models", (req, res) => {
 app.get("/api/public/tiers", (req, res) => {
   const tiers = db.prepare("SELECT * FROM tiers ORDER BY sort_order").all().map((t) => ({
     id: t.id, slug: t.slug, name: t.name, audienceLabel: t.audience_label, badge: t.badge, maxModels: t.max_models, locked: ["pro", "premium", "media2"].includes(t.slug),
-    providers: db.prepare("SELECT * FROM providers WHERE tier_id=? ORDER BY sort_order").all(t.id).map(publicProvider),
+    providers: db.prepare("SELECT * FROM providers WHERE tier_id=? ORDER BY sort_order").all(t.id).filter((p) => !HIDDEN_PROVIDER_BRANDS.includes(p.brand_name)).map(publicProvider),
   }));
   res.json({ ok: true, tiers });
 });
@@ -2272,6 +2438,10 @@ app.post("/v1/chat/completions", async (req, res) => {
   // Lyra: terjemahkan nama pendek publik -> id upstream sebelum diteruskan.
   if (provider && provider.brand_name === "Lyra" && fwdBody.model && LYRA_MODEL_MAP[fwdBody.model]) {
     fwdBody = Object.assign({}, fwdBody); fwdBody.model = LYRA_MODEL_MAP[fwdBody.model];
+  }
+  // Vela: idem Lyra (cadangan diam tier Gratis) — peta model identik.
+  if (provider && provider.brand_name === "Vela" && fwdBody.model && VELA_MODEL_MAP[fwdBody.model]) {
+    fwdBody = Object.assign({}, fwdBody); fwdBody.model = VELA_MODEL_MAP[fwdBody.model];
   }
   // Failover: coba tiap upstream sampai berhasil (untuk Gratis gabungan).
   let lastError = null;
