@@ -69,7 +69,9 @@ const VELA_MODELS = ["DeepSeek-V4-Flash", "MiniMax-M2.7", "GLM-5.3-Flash"];
 const VELA_MODEL_MAP = { "DeepSeek-V4-Flash": "deepseek-ai/DeepSeek-V4-Flash-0731", "MiniMax-M2.7": "MiniMaxAI/MiniMax-M2.7", "GLM-5.3-Flash": "zai-org/GLM-5.3-Flash" };
 const VELA_NOTES = { "DeepSeek-V4-Flash": "DeepSeek V4 Flash — kencang untuk chat dan coding.", "MiniMax-M2.7": "MiniMax M2.7 — ringan dan cepat.", "GLM-5.3-Flash": "GLM 5.3 Flash — reasoning ringan." };
 // Provider yang disembunyikan dari daftar publik (cadangan diam operator).
-const HIDDEN_PROVIDER_BRANDS = ["Vela"];
+// Aquila ditambah 2026-10-31 (perintah Hestia "kunci aja dulu untuk pengguna"):
+// provider Spesial kedua ini dikunci untuk pengguna — hanya admin yang bisa panen.
+const HIDDEN_PROVIDER_BRANDS = ["Vela", "Aquila"];
 // SPESIAL (tier Spesial, 2026-10-30, perintah Hestia): tier promosi web — katalog = 9 model
 // chat yang TERBUKTI kebuka di akun trial upstream (tes operator 2026-10-30). Nama publik =
 // id upstream apa adanya (tanpa peta). upstream_url TIDAK ditulis di kode — diisi operator
@@ -2515,6 +2517,9 @@ app.post("/api/harvest", requireAuth, async (req, res) => {
   const count = Number(req.body.count);
   const provider = db.prepare("SELECT * FROM providers WHERE id=?").get(req.body.providerId);
   if (!provider) return res.status(404).json({ ok: false, error: "provider_not_found" });
+  // Provider tersembunyi dikunci untuk pengguna biasa (pola Vela; Aquila per perintah
+  // Hestia 2026-10-31) — panennya hanya lewat panel admin / akun admin.
+  if (HIDDEN_PROVIDER_BRANDS.includes(provider.brand_name) && !(req.user && req.user.is_admin)) return res.status(403).json({ ok: false, error: "provider_locked" });
   if (!Number.isInteger(count) || count < 1 || count > 50) return res.status(400).json({ ok: false, error: "count_must_be_1_to_50" });
   try {
     const out = await doHarvest({ userId: req.user.id, providerId: provider.id, count });
