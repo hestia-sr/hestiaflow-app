@@ -280,6 +280,12 @@ async function deleteMyKey(id, btn) {
   try { await api(`/api/my-keys/${id}`, { method: "DELETE" }); loadUser(); }
   catch (e) { alert("Gagal hapus: " + e.message); btn.disabled = false; btn.textContent = "Hapus"; btn.dataset.armed = ""; }
 }
+async function deleteNoCreditKeys() {
+  if (!confirm("Hapus semua key yang TIDAK ada credit-nya (credit kosong / 0) secara PERMANEN? Key yang masih ada credit-nya tidak ikut terhapus.")) return;
+  if (!confirm("Yakin 100%? Tindakan ini permanen dan tidak bisa dibatalkan.")) return;
+  try { const r = await api("/api/admin/keys/no-credit", { method: "DELETE" }); alert(`Selesai: ${r.deletedKeys} key tanpa credit terhapus permanen.`); loadAdmin(); }
+  catch (e) { alert("Gagal hapus key tanpa credit: " + e.message); }
+}
 async function deleteAllAdminKeys() {
   const total = (adminCache.stats && adminCache.stats.keys) || 0;
   if (!confirm(`Hapus SEMUA ${total} API key secara PERMANEN? Semua key milik semua pengguna akan hilang dan tidak bisa dikembalikan.`)) return;
@@ -463,6 +469,8 @@ function renderAdminSections() {
   let html = "";
   if (adminSection === "pengguna") {
     html = `<div id="sec-pengguna"><h3>01 · Pengguna</h3><p class="muted">Ketuk kartu pengguna untuk melihat kunci miliknya.</p>
+      <div class="card" style="margin-bottom:12px"><h4 style="margin:0 0 6px">Bersihkan API Key</h4><p class="muted" style="margin:0 0 10px">Hapus key yang menumpuk secara permanen. Key yang dihapus tidak bisa dikembalikan, dan data akun panen yang terhubung ikut terhapus.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-danger" onclick="deleteNoCreditKeys()">Hapus Key Tanpa Credit</button><button class="btn btn-danger" onclick="deleteAllAdminKeys()">Hapus Semua Key</button></div></div>
       <div class="grid">${adminCache.users.length ? adminCache.users.map((u) => `
       <div class="card usercard" role="button" tabindex="0" onclick="viewUserKeys(${u.id})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();viewUserKeys(${u.id})}">
         <div style="display:flex;gap:10px;align-items:center">${u.avatar ? `<img src="${esc(u.avatar)}" style="width:40px;height:40px;border-radius:50%" />` : `<div style="width:40px;height:40px;border-radius:50%;background:var(--plum);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800">${esc((u.name || u.email || "?").slice(0, 1).toUpperCase())}</div>`}
@@ -474,7 +482,7 @@ function renderAdminSections() {
   }
   if (adminSection === "kunci") {
     const keys = keyFilterUser ? adminCache.keys.filter((k) => String(k.ownerEmail) === String(keyFilterUser)) : adminCache.keys;
-    html = `<div id="admin-keys"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><h3 style="margin:0">Semua API key</h3><button class="btn btn-danger" onclick="deleteAllAdminKeys()">HAPUS SEMUA</button></div>
+    html = `<div id="admin-keys"><h3>Semua API key</h3>
       ${keyFilterUser ? `<div class="banner-filter">Filter: kunci milik <b>${esc(keyFilterUser)}</b> <button class="btn btn-ghost btn-sm" onclick="clearKeyFilter()">Tampilkan semua</button></div>` : ""}
       <div class="grid">${keys.map((k) => `<div class="card"><span class="chip">${esc(k.providerBrand || "")}</span><span class="chip">${esc(k.tierSlug || "")}</span>
         <p class="kv">Pemilik: <b>${esc(k.ownerEmail || "(pool)")}</b> · Prefix: ${esc(k.keyPrefix)} · Credit: ${k.credit != null ? esc(k.credit) : "Tidak dinyatakan"}</p>
