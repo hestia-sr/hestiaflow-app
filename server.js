@@ -1444,23 +1444,17 @@ async function satuKaliSpesial(provider) {
   const tempPassword = fn.charAt(0).toUpperCase() + fn.slice(1) + "#" + Math.floor(10000 + Math.random() * 90000) + hurufEkstra;
   // Generate email: coba sampai 3x dengan jeda (perbaikan 2026-10-30 — tempmail.ing sempat
   // menolak beruntun saat banyak panen jalan barengan; sekali gagal jangan langsung mati).
-  // Sumber email: Gmail induk (env SPESIAL_GMAIL_EMAIL + SPESIAL_GMAIL_APP_PASSWORD)
-  // didahulukan — variasi titik+tag acak dari induk, kode dibaca mesin dari inbox
-  // induk via IMAP (perintah Hestia 2026-10-30; jalur ini terbukti lolos uji 1 akun).
-  // Tanpa env itu, kembali ke tempmail.ing seperti sebelumnya.
-  const indukGmail = gmailIndukSpesial();
+  // Sumber email: email sementara tempmail.ing (perintah Hestia 2026-10-30 — jalur
+  // Gmail induk dihentikan atas perintahnya; domain email bervariasi mengikuti
+  // putaran domain tempmail.ing, tidak bertumpu pada satu domain).
   let tempEmail = null;
-  if (indukGmail) {
-    tempEmail = variasiGmail(indukGmail.email);
-    console.log("[spesial] sumber email: Gmail induk");
-  } else {
-    for (let ga = 1; ga <= 3 && !tempEmail; ga++) {
-      tempEmail = await tempmailGenerate().catch(() => null);
-      if (!tempEmail) console.log(`[spesial] tempmail.ing generate gagal (percobaan ${ga}/3)`);
-      if (!tempEmail && ga < 3) await new Promise((res) => setTimeout(res, 3000));
-    }
-    if (!tempEmail) { console.log("[spesial] tempmail.ing generate gagal total"); return null; }
+  console.log("[spesial] sumber email: email sementara");
+  for (let ga = 1; ga <= 3 && !tempEmail; ga++) {
+    tempEmail = await tempmailGenerate().catch(() => null);
+    if (!tempEmail) console.log(`[spesial] tempmail.ing generate gagal (percobaan ${ga}/3)`);
+    if (!tempEmail && ga < 3) await new Promise((res) => setTimeout(res, 3000));
   }
+  if (!tempEmail) { console.log("[spesial] tempmail.ing generate gagal total"); return null; }
   // Cookie jar sederhana: sesi send-otp -> verify-otp -> login -> tokens/balance.
   const jar = {};
   const saveCookies = (res) => {
@@ -1478,43 +1472,29 @@ async function satuKaliSpesial(provider) {
   // beda UA — sesi OTP upstream yang terikat UA pun ditolak (400). Sekarang UA dikunci per sesi.
   const ua = randUA();
   try {
-    const proxies = await fetchProxyHidup(siteBase, 25, 100);
-    console.log(`[spesial] proxy OK terkumpul: ${proxies.length}`);
-    if (!proxies.length) { console.log("[spesial] tidak ada proxy hidup — gagal jujur (tanpa fallback direct)"); return null; }
-    // Baseline kesegaran Gmail: catat UID email lama SEBELUM send-otp pertama,
-    // supaya hanya email yang tiba sesudah ini yang boleh dibaca kodenya.
-    const idLamaGmail = indukGmail ? await imapKumpulkanIdLama(indukGmail, tempEmail) : null;
-    // 2) send-otp lewat proxy (maks 4x coba).
-    let winProxy = null;
-    const sudahCoba = new Set();
-    let tries = 0;
-    while (tries < 4) {
-      const eligible = proxies.filter((x) => !_spesialBadProxy.has(x) && !sudahCoba.has(x));
-      if (!eligible.length) break;
-      const p = eligible[Math.floor(Math.random() * eligible.length)];
-      sudahCoba.add(p);
-      if (!(await cekProxyHidup(siteBase, p))) continue;
-      tries++;
+    // 2) send-otp LANGSUNG tanpa proxy (perintah Hestia 2026-10-30 — pengecualian
+    // seperti tier Gratis: pendaftaran keluar dari IP server apa adanya, tanpa
+    // tahap kumpul/saring proxy yang membuat panen lama).
+    console.log("[spesial] mode: langsung tanpa proxy");
+    let terkirim = false;
+    for (let tries = 1; tries <= 2 && !terkirim; tries++) {
       try {
         const r = await fetch(siteBase + "/api/auth/send-otp", {
           method: "POST", headers: { "Content-Type": "application/json", "User-Agent": ua },
           body: JSON.stringify({ email: tempEmail, username }),
-          dispatcher: proxyDispatcher(p), signal: AbortSignal.timeout(25000)
+          signal: AbortSignal.timeout(25000)
         });
         saveCookies(r);
         const j = await r.json().catch(() => null);
-        console.log(`[spesial] send-otp status=${r.status} via=proxy${tries}`);
-        if (r.ok && j && j.success === true) { winProxy = p; break; }
-        if (r.status === 403 || r.status === 429) _spesialBadProxy.add(p);
-        if (r.status !== 403 && r.status !== 429) break;
-      } catch (e) { console.log(`[spesial] send-otp via=proxy${tries} exception ${e && e.message ? e.message : "unknown"}`); }
+        console.log(`[spesial] send-otp status=${r.status} via=langsung${tries}`);
+        if (r.ok && j && j.success === true) terkirim = true;
+        else break;
+      } catch (e) { console.log(`[spesial] send-otp via=langsung${tries} exception ${e && e.message ? e.message : "unknown"}`); }
     }
-    if (!winProxy) { console.log("[spesial] send-otp gagal di semua proxy"); return null; }
-    const winDisp = proxyDispatcher(winProxy);
+    if (!terkirim) { console.log("[spesial] send-otp gagal"); return null; }
     // 3) Poll kode OTP dari inbox sumber terpilih. Kumpulkan SEMUA kode 6 digit yang
     // ditemukan (isi email bisa memuat lebih dari satu angka) untuk bahan percobaan verify.
     const ambilKodeInbox = async () => {
-      if (indukGmail) return imapAmbilKode(indukGmail, tempEmail, idLamaGmail);
       const ketemu = [];
       try {
         const rr = await fetch("https://api.tempmail.ing/api/emails/" + encodeURIComponent(tempEmail), { signal: AbortSignal.timeout(20000) });
@@ -1543,7 +1523,7 @@ async function satuKaliSpesial(provider) {
         const r = await fetch(siteBase + "/api/auth/verify-otp", {
           method: "POST", headers: { "Content-Type": "application/json", "User-Agent": ua, Cookie: cookieHdr() },
           body: JSON.stringify({ otp: kode, email: tempEmail, password: tempPassword, username, inviteCode: "", referralCode: "" }),
-          dispatcher: winDisp, signal: AbortSignal.timeout(25000)
+          signal: AbortSignal.timeout(25000)
         });
         saveCookies(r);
         const j = await r.json().catch(() => null);
@@ -1572,7 +1552,7 @@ async function satuKaliSpesial(provider) {
         const r2 = await fetch(siteBase + "/api/auth/send-otp", {
           method: "POST", headers: { "Content-Type": "application/json", "User-Agent": ua, Cookie: cookieHdr() },
           body: JSON.stringify({ email: tempEmail, username }),
-          dispatcher: winDisp, signal: AbortSignal.timeout(25000)
+          signal: AbortSignal.timeout(25000)
         });
         saveCookies(r2);
         const j2 = await r2.json().catch(() => null);
@@ -1592,12 +1572,12 @@ async function satuKaliSpesial(provider) {
       } catch (e) { console.log(`[spesial] send-otp ulang exception ${e && e.message ? e.message : "unknown"}`); }
     }
     if (!verifiedOtp) { console.log("[spesial] verify-otp gagal"); return "GAGAL_VERIFY"; }
-    // Perkuat sesi: login ulang (endpoint terbukti) lewat proxy pemenang.
+    // Perkuat sesi: login ulang (endpoint terbukti), langsung.
     try {
       const lg = await fetch(siteBase + "/api/auth/login", {
         method: "POST", headers: { "Content-Type": "application/json", "User-Agent": ua, Cookie: cookieHdr() },
         body: JSON.stringify({ email: tempEmail, password: tempPassword }),
-        dispatcher: winDisp, signal: AbortSignal.timeout(25000)
+        signal: AbortSignal.timeout(25000)
       });
       saveCookies(lg);
       await lg.json().catch(() => null);
@@ -1605,32 +1585,23 @@ async function satuKaliSpesial(provider) {
     } catch (e) { console.log(`[spesial] login exception ${e && e.message ? e.message : "unknown"}`); }
     // 5+6) Ambil API key + saldo (sesi; proxy pemenang dulu, lalu proxy kolam lain bila putus).
     let key = null, balance = null;
-    const sessProxies = [winProxy, ...proxies.filter((x) => x !== winProxy && !_spesialBadProxy.has(x)).slice(0, 2)];
-    for (const lp of sessProxies) {
-      try {
-        const disp = proxyDispatcher(lp);
-        const tk = await fetch(siteBase + "/api/user/tokens", { headers: { "User-Agent": ua, Cookie: cookieHdr() }, dispatcher: disp, signal: AbortSignal.timeout(25000) });
-        saveCookies(tk);
-        const tj = tk.ok ? await tk.json().catch(() => null) : null;
-        const items = tj && tj.data && Array.isArray(tj.data.items) ? tj.data.items : [];
-        if (items.length && items[0].key) key = items[0].key;
-        const bl = await fetch(siteBase + "/api/credits/balance", { headers: { "User-Agent": ua, Cookie: cookieHdr() }, dispatcher: disp, signal: AbortSignal.timeout(25000) });
-        const bj = bl.ok ? await bl.json().catch(() => null) : null;
-        if (bj && bj.data && typeof bj.data.balance === "number") balance = bj.data.balance;
-        console.log(`[spesial] tokens status=${tk.status} hasKey=${!!key} balance=${balance}`);
-        if (key) break;
-      } catch (e) { console.log(`[spesial] ambil key exception ${e && e.message ? e.message : "unknown"}`); }
-    }
+    try {
+      const tk = await fetch(siteBase + "/api/user/tokens", { headers: { "User-Agent": ua, Cookie: cookieHdr() }, signal: AbortSignal.timeout(25000) });
+      saveCookies(tk);
+      const tj = tk.ok ? await tk.json().catch(() => null) : null;
+      const items = tj && tj.data && Array.isArray(tj.data.items) ? tj.data.items : [];
+      if (items.length && items[0].key) key = items[0].key;
+      const bl = await fetch(siteBase + "/api/credits/balance", { headers: { "User-Agent": ua, Cookie: cookieHdr() }, signal: AbortSignal.timeout(25000) });
+      const bj = bl.ok ? await bl.json().catch(() => null) : null;
+      if (bj && bj.data && typeof bj.data.balance === "number") balance = bj.data.balance;
+      console.log(`[spesial] tokens status=${tk.status} hasKey=${!!key} balance=${balance}`);
+    } catch (e) { console.log(`[spesial] ambil key exception ${e && e.message ? e.message : "unknown"}`); }
     if (!key) { console.log("[spesial] API key tidak didapat"); return null; }
-    // 7) Verifikasi key via /v1/models (proxy pemenang dulu, direct cadangan — pola RooyAI).
+    // 7) Verifikasi key via /v1/models (langsung).
     let verified = false;
     try {
-      const vr = await fetch(apiBase + "/models", { headers: { Authorization: "Bearer " + key, "User-Agent": ua }, dispatcher: winDisp, signal: AbortSignal.timeout(25000) });
+      const vr = await fetch(apiBase + "/models", { headers: { Authorization: "Bearer " + key, "User-Agent": ua }, signal: AbortSignal.timeout(25000) });
       verified = vr.ok;
-      if (!verified) {
-        const vd = await fetch(apiBase + "/models", { headers: { Authorization: "Bearer " + key, "User-Agent": ua }, signal: AbortSignal.timeout(25000) });
-        verified = vd.ok;
-      }
     } catch {}
     console.log(`[spesial] auto-register ok, verified=${verified} balance=${balance}`);
     return { upstreamApiKey: key, upstreamBaseUrl: apiBase, tempEmail, tempPassword, live: verified };
