@@ -76,6 +76,13 @@ const HIDDEN_PROVIDER_BRANDS = ["Vela"];
 // lewat env PROVIDER_SPESIAL_UPSTREAM_URL (sync env sesudah seed()).
 const SPESIAL_MODELS = ["gpt-5.6-luna", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "deepseek-v4-flash", "deepseek-v4-pro", "qwen3.5-plus", "qwen3.6-plus", "Qwen3.5-397B-A17B", "MiniMax-M3"];
 const SPESIAL_NOTES = { "gpt-5.6-luna": "GPT-5.6 Luna — flagship ringan.", "gemini-3-flash-preview": "Gemini 3 Flash — cepat dan serbaguna.", "gemini-3.1-flash-lite-preview": "Gemini 3.1 Flash Lite — paling ringan.", "deepseek-v4-flash": "DeepSeek V4 Flash — kencang untuk chat dan coding.", "deepseek-v4-pro": "DeepSeek V4 Pro — reasoning lebih dalam.", "qwen3.5-plus": "Qwen 3.5 Plus — seimbang untuk semua tugas.", "qwen3.6-plus": "Qwen 3.6 Plus — versi lebih baru.", "Qwen3.5-397B-A17B": "Qwen 3.5 397B — model raksasa.", "MiniMax-M3": "MiniMax M3 — ringan dan cepat." };
+// AQUILA (tier Spesial, 2026-10-31, perintah Hestia): provider KEDUA di tier Spesial —
+// katalog = 9 model chat yang TERBUKTI menjawab di akun trial upstream (sweep operator
+// 2026-10-31: GPT-5.4 family, Claude Sonnet/Opus 4.6, Gemini 2.5/3.8 Flash, Qwen 3.5/3.6
+// Plus). Nama publik = id upstream apa adanya (tanpa peta). upstream_url TIDAK ditulis
+// di kode — diisi operator lewat env PROVIDER_AQUILA_UPSTREAM_URL (sync env sesudah seed()).
+const AQUILA_MODELS = ["gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "claude-sonnet-4-6", "claude-opus-4-6", "gemini-2.5-flash", "gemini-3.8-flash", "qwen3.5-plus", "qwen3.6-plus"];
+const AQUILA_NOTES = { "gpt-5.4": "GPT-5.4 — flagship serbaguna.", "gpt-5.4-mini": "GPT-5.4 Mini — cepat dan hemat.", "gpt-5.4-nano": "GPT-5.4 Nano — paling ringan.", "claude-sonnet-4-6": "Claude Sonnet 4.6 — coding dan analisis.", "claude-opus-4-6": "Claude Opus 4.6 — reasoning terkuat.", "gemini-2.5-flash": "Gemini 2.5 Flash — cepat dan serbaguna.", "gemini-3.8-flash": "Gemini 3.8 Flash — versi lebih baru.", "qwen3.5-plus": "Qwen 3.5 Plus — seimbang untuk semua tugas.", "qwen3.6-plus": "Qwen 3.6 Plus — versi lebih baru." };
 // MIRA (tier Media V2): katalog gambar saja — id publik = id upstream (nama model generik).
 // Harga per gambar dari katalog studio upstream (kredit); seedream-5-flash belum terpetakan -> tanpa angka.
 const MIRA_MODELS = ["z-image", "qwen-image-2-1", "nano-banana-2", "nano-banana-2-1", "nano-banana-2-lite", "nano-banana-pro", "gpt-image-2-5-flare", "gpt-image-2-5-sunburst", "gpt-image-2", "grok-imagine-image-2", "seedream-5-lite", "seedream-5-pro", "seedream-5-flash"];
@@ -255,6 +262,12 @@ function seed() {
     "Spesial", "1 akun 300 credit.", 9, JSON.stringify(SPESIAL_MODELS), JSON.stringify(SPESIAL_NOTES), "1 request 1 credit · 6x request/menit.", 300, 1);
   db.prepare("UPDATE providers SET tier_id=(SELECT id FROM tiers WHERE slug='spesial'), tagline=?, model_count=?, model_list_json=?, model_notes_json=?, credit_note=?, default_credit=? WHERE brand_name='Spesial'").run(
     "1 akun 300 credit.", 9, JSON.stringify(SPESIAL_MODELS), JSON.stringify(SPESIAL_NOTES), "1 request 1 credit · 6x request/menit.", 300);
+  // Aquila: provider kedua tier Spesial (2026-10-31, perintah Hestia) — sort 2 di bawah
+  // Spesial, ekonomi kunci meniru Spesial persis (300 credit per akun, 1 request 1 credit).
+  db.prepare("INSERT INTO providers (tier_id,brand_name,tagline,model_count,model_list_json,model_notes_json,credit_note,default_credit,sort_order) SELECT (SELECT id FROM tiers WHERE slug='spesial'),?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM providers WHERE brand_name='Aquila')").run(
+    "Aquila", "1 akun 300 credit.", 9, JSON.stringify(AQUILA_MODELS), JSON.stringify(AQUILA_NOTES), "1 request 1 credit.", 300, 2);
+  db.prepare("UPDATE providers SET tier_id=(SELECT id FROM tiers WHERE slug='spesial'), tagline=?, model_count=?, model_list_json=?, model_notes_json=?, credit_note=?, default_credit=?, sort_order=? WHERE brand_name='Aquila'").run(
+    "1 akun 300 credit.", 9, JSON.stringify(AQUILA_MODELS), JSON.stringify(AQUILA_NOTES), "1 request 1 credit.", 300, 2);
   const tierCount = db.prepare("SELECT COUNT(*) c FROM tiers").get().c;
   if (tierCount > 0) return;
   const insTier = db.prepare("INSERT INTO tiers (slug,name,audience_label,badge,max_models,sort_order) VALUES (?,?,?,?,?,?)");
@@ -393,6 +406,7 @@ async function enqueueAdminHarvestJobs(provider, count) {
   if (provider.brand_name === "Lyra") { models = LYRA_MODELS.slice(); source = "configured"; }
   if (provider.brand_name === "Vela") { models = VELA_MODELS.slice(); source = "configured"; }
   if (provider.brand_name === "Spesial") { models = SPESIAL_MODELS.slice(); source = "configured"; }
+  if (provider.brand_name === "Aquila") { models = AQUILA_MODELS.slice(); source = "configured"; }
   if (tier && tier.max_models != null && models.length > tier.max_models) models = models.slice(0, tier.max_models);
   const jobIds = [];
   const keys = [];
@@ -1715,6 +1729,180 @@ async function tryAutoRegisterSpesial(provider) {
   return null;
 }
 
+const _aquilaBadProxy = new Set();
+// Aquila (tier Spesial): daftar akun upstream lewat proxy (pola Vela) — panel basis
+// New API: GET /api/verification?email= -> kode 6-hex di inbox tempmail.ing ->
+// POST /api/user/register -> POST /api/user/login (cookie sesi + id) ->
+// POST /api/token/ -> POST /api/token/{id}/key (kunci penuh, awalan sk- ditambah di sini)
+// -> verifikasi /v1/models + 1 chat kecil. Alur TERBUKTI manual oleh operator 2026-10-31
+// (akun uji + sweep model). Tanpa proxy = gagal jujur, tanpa fallback direct.
+async function tryAutoRegisterAquila(provider) {
+  const apiBase = (provider.upstream_url || "").replace(/\/$/, "");
+  if (!apiBase) return null;
+  const siteBase = apiBase.replace(/\/v1$/, "");
+  if (siteBase === apiBase) { console.log("[aquila] bentuk upstream_url tidak dikenal"); return null; }
+  const namaPool = ["raka", "dimas", "putri", "sari", "budi", "ayu", "fajar", "nadia", "rizki", "dewi", "bagas", "citra"];
+  const nama = namaPool[Math.floor(Math.random() * namaPool.length)];
+  const hurufEkstra = [...crypto.randomBytes(2)].map((b) => "abcdefghijklmnopqrstuvwxyz"[b % 26]).join("");
+  const tempPassword = nama.charAt(0).toUpperCase() + nama.slice(1) + "#" + Math.floor(10000 + Math.random() * 90000) + hurufEkstra;
+  const username = nama + Math.floor(1000 + Math.random() * 9000);
+  const tempEmail = await tempmailGenerate().catch(() => null);
+  if (!tempEmail) { console.log("[aquila] tempmail.ing generate gagal"); return null; }
+  const jar = {};
+  const saveCookies = (res) => {
+    try {
+      for (const sc of (res.headers.getSetCookie ? res.headers.getSetCookie() : [])) {
+        const pair = sc.split(";")[0];
+        const idx = pair.indexOf("=");
+        if (idx > 0) jar[pair.slice(0, idx).trim()] = pair.slice(idx + 1).trim();
+      }
+    } catch {}
+  };
+  const cookieHdr = () => Object.entries(jar).map(([k, v]) => k + "=" + v).join("; ");
+  const ua = randUA();
+  try {
+    const proxies = await fetchProxyHidup(siteBase, 25, 100);
+    console.log(`[aquila] proxy OK terkumpul: ${proxies.length}`);
+    if (!proxies.length) { console.log("[aquila] tidak ada proxy hidup — gagal jujur (tanpa fallback direct)"); return null; }
+    // 1) Minta kode verifikasi email lewat proxy (maks 4x coba) — proxy pemenang
+    //    dipakai untuk seluruh sesi akun ini.
+    let winProxy = null;
+    const sudahCoba = new Set();
+    let tries = 0;
+    while (tries < 4) {
+      const eligible = proxies.filter((x) => !_aquilaBadProxy.has(x) && !sudahCoba.has(x));
+      if (!eligible.length) break;
+      const p = eligible[Math.floor(Math.random() * eligible.length)];
+      sudahCoba.add(p);
+      if (!(await cekProxyHidup(siteBase, p))) continue;
+      tries++;
+      try {
+        const r = await fetch(siteBase + "/api/verification?email=" + encodeURIComponent(tempEmail) + "&turnstile=", {
+          headers: { "User-Agent": ua }, dispatcher: proxyDispatcher(p), signal: AbortSignal.timeout(25000)
+        });
+        saveCookies(r);
+        const j = await r.json().catch(() => null);
+        console.log(`[aquila] verification status=${r.status} ok=${!!(j && j.success)} via=proxy${tries}`);
+        if (r.ok && j && j.success) { winProxy = p; break; }
+        if (r.status === 403 || r.status === 429) _aquilaBadProxy.add(p);
+        if (r.status !== 403 && r.status !== 429) break;
+      } catch (e) { console.log(`[aquila] verification via=proxy${tries} exception ${e && e.message ? e.message : "unknown"}`); }
+    }
+    if (!winProxy) { console.log("[aquila] minta kode verifikasi gagal di semua proxy"); return null; }
+    const winDisp = proxyDispatcher(winProxy);
+    // 2) Poll kode dari inbox tempmail.ing (direct, pola Vela).
+    const cariKode = async () => {
+      try {
+        const rr = await fetch("https://api.tempmail.ing/api/emails/" + encodeURIComponent(tempEmail), { signal: AbortSignal.timeout(20000) });
+        const jj = rr.ok ? await rr.json().catch(() => null) : null;
+        for (const em of (jj && jj.emails) || []) {
+          if (!/tokit/i.test(String((em && em.from_address) || "") + " " + String((em && em.from_name) || ""))) continue;
+          const blob = String((em && em.text) || "") + " " + String((em && em.content) || "");
+          const m1 = blob.match(/verification code is:\s*(?:<[^>]+>\s*)*([0-9a-zA-Z]{4,8})/i);
+          if (m1) return m1[1];
+          const m2 = blob.match(/\b([0-9a-f]{6})\b/i);
+          if (m2) return m2[1];
+        }
+      } catch {}
+      return null;
+    };
+    let code = null;
+    const deadline = Date.now() + 110000;
+    while (Date.now() < deadline && !code) {
+      code = await cariKode();
+      if (!code) await new Promise((res) => setTimeout(res, 6000));
+    }
+    if (!code) { console.log("[aquila] kode verifikasi tidak datang"); return null; }
+    // 3) Register.
+    let userId = null;
+    try {
+      const rg = await fetch(siteBase + "/api/user/register?turnstile=", {
+        method: "POST", headers: { "Content-Type": "application/json", "User-Agent": ua, Cookie: cookieHdr() },
+        body: JSON.stringify({ username, password: tempPassword, password2: tempPassword, email: tempEmail, verification_code: code }),
+        dispatcher: winDisp, signal: AbortSignal.timeout(25000)
+      });
+      saveCookies(rg);
+      const rj = await rg.json().catch(() => null);
+      console.log(`[aquila] register status=${rg.status} ok=${!!(rj && rj.success)}${rj && !rj.success ? " msg=" + String(rj.message || "").slice(0, 120) : ""}`);
+      if (!(rj && rj.success)) { console.log("[aquila] register ditolak upstream"); return null; }
+    } catch (e) { console.log(`[aquila] register exception ${e && e.message ? e.message : "unknown"}`); return null; }
+    // 4) Login -> cookie sesi + id pengguna.
+    try {
+      const lg = await fetch(siteBase + "/api/user/login", {
+        method: "POST", headers: { "Content-Type": "application/json", "User-Agent": ua, Cookie: cookieHdr() },
+        body: JSON.stringify({ username, password: tempPassword }),
+        dispatcher: winDisp, signal: AbortSignal.timeout(25000)
+      });
+      saveCookies(lg);
+      const lj = await lg.json().catch(() => null);
+      userId = lj && lj.data && lj.data.id ? lj.data.id : null;
+      console.log(`[aquila] login status=${lg.status} hasId=${!!userId}`);
+    } catch (e) { console.log(`[aquila] login exception ${e && e.message ? e.message : "unknown"}`); }
+    if (!userId) { console.log("[aquila] login gagal / id tidak ada"); return null; }
+    const authHdr = { "Content-Type": "application/json", "User-Agent": ua, Cookie: cookieHdr(), "New-Api-User": String(userId) };
+    // 5) Buat token (kuota tanpa batas, tidak kedaluwarsa).
+    const tokenName = "hf" + Math.floor(1000 + Math.random() * 9000);
+    try {
+      const ct = await fetch(siteBase + "/api/token/", {
+        method: "POST", headers: authHdr,
+        body: JSON.stringify({ name: tokenName, expired_time: -1, remain_quota: 0, unlimited_quota: true, model_limits_enabled: false, model_limits: "", allow_ips: "", group: "" }),
+        dispatcher: winDisp, signal: AbortSignal.timeout(25000)
+      });
+      saveCookies(ct);
+      const cj = await ct.json().catch(() => null);
+      console.log(`[aquila] buat token status=${ct.status} ok=${!!(cj && cj.success)}`);
+      if (!(cj && cj.success)) { console.log("[aquila] buat token ditolak upstream"); return null; }
+    } catch (e) { console.log(`[aquila] buat token exception ${e && e.message ? e.message : "unknown"}`); return null; }
+    // 6) Cari id token dari daftar, lalu ungkap kunci penuhnya.
+    let rawKey = null;
+    try {
+      const lt = await fetch(siteBase + "/api/token/?p=0&size=10", { headers: authHdr, dispatcher: winDisp, signal: AbortSignal.timeout(25000) });
+      saveCookies(lt);
+      const lj2 = await lt.json().catch(() => null);
+      const items = (lj2 && lj2.data && (lj2.data.items || lj2.data)) || [];
+      const mine = (Array.isArray(items) ? items : []).find((t) => t && t.name === tokenName) || (Array.isArray(items) ? items[0] : null);
+      if (mine && mine.id) {
+        const rk = await fetch(siteBase + "/api/token/" + mine.id + "/key", {
+          method: "POST", headers: authHdr, body: JSON.stringify({}), dispatcher: winDisp, signal: AbortSignal.timeout(25000)
+        });
+        saveCookies(rk);
+        const rkj = await rk.json().catch(() => null);
+        rawKey = (rkj && rkj.data && rkj.data.key) || null;
+        console.log(`[aquila] ungkap key status=${rk.status} hasKey=${!!rawKey}`);
+      } else {
+        console.log("[aquila] token tidak ditemukan di daftar");
+      }
+    } catch (e) { console.log(`[aquila] ambil key exception ${e && e.message ? e.message : "unknown"}`); }
+    if (!rawKey) { console.log("[aquila] kunci penuh tidak didapat"); return null; }
+    const finalKey = rawKey.startsWith("sk-") ? rawKey : "sk-" + rawKey;
+    // 7) Verifikasi: /v1/models (proxy pemenang dulu, direct cadangan — pola Vela),
+    //    lalu 1 chat kecil ke model termurah yang terbukti hidup (tercatat di log).
+    let verified = false;
+    try {
+      const vr2 = await fetch(apiBase + "/models", { headers: { Authorization: "Bearer " + finalKey, "User-Agent": ua }, dispatcher: winDisp, signal: AbortSignal.timeout(25000) });
+      verified = vr2.ok;
+      if (!verified) {
+        const vd = await fetch(apiBase + "/models", { headers: { Authorization: "Bearer " + finalKey, "User-Agent": ua }, signal: AbortSignal.timeout(25000) });
+        verified = vd.ok;
+      }
+    } catch {}
+    let chatOk = false;
+    if (verified) {
+      try {
+        const ch = await fetch(apiBase + "/chat/completions", {
+          method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + finalKey, "User-Agent": ua },
+          body: JSON.stringify({ model: "qwen3.6-plus", messages: [{ role: "user", content: "Say: ok" }], max_tokens: 8 }),
+          dispatcher: winDisp, signal: AbortSignal.timeout(40000)
+        });
+        chatOk = ch.ok;
+        await ch.text().catch(() => null);
+      } catch {}
+    }
+    console.log(`[aquila] auto-register ok, verified=${verified} chat=${chatOk}`);
+    return { upstreamApiKey: finalKey, upstreamBaseUrl: apiBase, tempEmail, tempPassword, live: verified };
+  } catch (e) { console.log("[aquila] exception", e && e.message); return null; }
+}
+
 const _velaBadProxy = new Set();
 // Vela (cadangan DIAM tier Gratis): daftar akun upstream lewat proxy (pola RooyAI/Spesial) —
 // register {email,password} -> link verifikasi di inbox tempmail.ing -> GET link -> login
@@ -1910,6 +2098,13 @@ async function tryAutoRegister(provider, tempEmail, tempPassword) {
     if (sp) return sp;
     return null;
   }
+  // Aquila (tier Spesial): panel basis New API — kode verifikasi email -> register ->
+  // login -> token -> ungkap kunci. Alur terbukti manual oleh operator 2026-10-31.
+  if ((provider.brand_name || "").toLowerCase() === "aquila") {
+    const aq = await tryAutoRegisterAquila(provider);
+    if (aq) return aq;
+    return null;
+  }
   // Vela (cadangan diam Gratis): register + link verifikasi email lewat proxy -> login
   // (api_key) -> klaim promo referral -> key khusus. Alur terbukti recon operator 2026-10-30.
   if ((provider.brand_name || "").toLowerCase() === "vela") {
@@ -2066,6 +2261,7 @@ async function doHarvest({ userId, providerId, count }) {
   if (provider && provider.brand_name === "Vela") { models = VELA_MODELS.slice(); source = "configured"; }
   // Spesial: sama — selalu katalog 9 model yang terbukti kebuka di trial upstream.
   if (provider && provider.brand_name === "Spesial") { models = SPESIAL_MODELS.slice(); source = "configured"; }
+  if (provider && provider.brand_name === "Aquila") { models = AQUILA_MODELS.slice(); source = "configured"; }
   // Gratis tier: enforce max 2 models.
   if (tier && tier.max_models != null && models.length > tier.max_models) models = models.slice(0, tier.max_models);
   const logs = []; const keys = [];
