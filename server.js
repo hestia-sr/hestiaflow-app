@@ -713,6 +713,7 @@ async function tryAutoRegisterLuna(provider) {
   // 3) Signup (browser-like headers; retry without X-Forwarded-For if 403).
   let cookie = "";
   let r = null, j = null;
+  let winProxy = null; // jalur (proxy) yang menang saat signup — dipakai ulang di langkah key
   try {
     const body = JSON.stringify({ name, email: tempEmail, password: tempPassword });
     const mkHeaders = (withXff) => {
@@ -741,12 +742,14 @@ async function tryAutoRegisterLuna(provider) {
     for (let pi = 0; pi < maxProxyTries; pi++) {
       const p = proxies[Math.floor(Math.random() * proxies.length)];
       tried.push(p.split(":")[0]);
-      attempt = await doSignup(true, p);
+      // PERBAIKAN 2026-10-31: pengecualian jaringan pada satu proxy tidak lagi
+      // membunuh akun — lanjut ke jalur berikutnya (dulu langsung return null).
+      try { attempt = await doSignup(true, p); } catch (e) { console.log(`[luna] signup proxy${pi + 1} exception ${e && e.message ? e.message : "unknown"}`); attempt = null; continue; }
       r = attempt.res; j = attempt.jj;
       let flags = "";
       if (!r.ok) { const txt = JSON.stringify(j || "").toLowerCase(); for (const kw of ["cloudflare", "disposable", "captcha", "bot", "verify", "forbidden", "blocked"]) if (txt.includes(kw)) flags += kw + ","; }
       console.log(`[luna] signup status=${r.status} ok=${r.ok} hasToken=${!!(j && j.token)} via=proxy${pi + 1} flags=${flags}`);
-      if (r.ok) break;
+      if (r.ok) { winProxy = p; break; }
       if (r.status !== 403 && r.status !== 429) break;
     }
     if (!attempt || !r.ok) {
@@ -764,17 +767,37 @@ async function tryAutoRegisterLuna(provider) {
     else cookie = `token=${j.token}`;
   } catch (e) { console.log(`[luna] signup exception ${e && e.message ? e.message : "unknown"}`); return null; }
   // 4) Create API key (session cookies).
+  // PERBAIKAN 2026-10-31 (perintah Hestia, bukti log 10:23 & 11:00: signup 200
+  // lalu "key exception fetch failed"): langkah ini dulu memakai SATU proxy
+  // acak dari daftar mentah tanpa cek hidup, tanpa pengulangan, tanpa cadangan
+  // langsung — proxy bangkai = akun mati. Sekarang multi-jalur: (1) jalur yang
+  // menang saat signup, (2) proxy yang SUDAH dicek hidup (fetchProxyHidup,
+  // pola Vela/Aquila), (3) langsung. Pengecualian jaringan pindah ke jalur
+  // berikutnya; respons HTTP apa pun menghentikan percobaan.
   try {
-    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 20000);
-    const kProxies = await fetchProxyList();
-    const kProxy = kProxies.length ? kProxies[Math.floor(Math.random() * kProxies.length)] : null;
-    const kOpts = { method: "POST", headers: { "X-Forwarded-For": randIp(), "User-Agent": randUA(), Cookie: cookie, "Accept": "application/json, text/plain, */*", "Referer": webBase + "/", "Origin": webBase }, signal: ctl.signal };
-    if (kProxy) { const kd = proxyDispatcher(kProxy); if (kd) kOpts.dispatcher = kd; }
-    const r = await fetch(webBase + "/api/v1/keys", kOpts);
-    clearTimeout(t);
-    const j = await r.json().catch(() => null);
+    const keyRoutes = [];
+    keyRoutes.push(winProxy);
+    try {
+      const hidup = await fetchProxyHidup(webBase);
+      for (const p of hidup) { if (keyRoutes.filter(Boolean).length >= 3) break; if (p && p !== winProxy) keyRoutes.push(p); }
+    } catch {}
+    if (winProxy) keyRoutes.push(null);
+    let r = null, j = null, keyAnswered = false;
+    for (let ri = 0; ri < keyRoutes.length && !keyAnswered; ri++) {
+      const rp = keyRoutes[ri];
+      const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 20000);
+      try {
+        const kOpts = { method: "POST", headers: { "X-Forwarded-For": randIp(), "User-Agent": randUA(), Cookie: cookie, "Accept": "application/json, text/plain, */*", "Referer": webBase + "/", "Origin": webBase }, signal: ctl.signal };
+        if (rp) { const kd = proxyDispatcher(rp); if (kd) kOpts.dispatcher = kd; }
+        r = await fetch(webBase + "/api/v1/keys", kOpts);
+        j = await r.json().catch(() => null);
+        console.log(`[luna] key status=${r.status} ok=${r.ok} hasKey=${!!(j && (j.key || j.api_key || j.apiKey))} via=${rp ? "proxy" : "direct"}${ri + 1} hasCookie=${!!cookie}`);
+        keyAnswered = true;
+      } catch (e) { console.log(`[luna] key attempt${ri + 1} exception ${e && e.message ? e.message : "unknown"}`); }
+      finally { clearTimeout(t); }
+    }
+    if (!keyAnswered || !r) return null;
     const key = j && (j.key || j.api_key || j.apiKey);
-    console.log(`[luna] key status=${r.status} ok=${r.ok} hasKey=${!!key} hasCookie=${!!cookie}`);
     if (!r.ok) return null;
     if (!key) return null;
     // Verify the harvested key against the provider (server-side, no exposure).
