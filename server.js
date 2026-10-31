@@ -108,8 +108,11 @@ const AQUILA_NOTES = { "gpt-5.4": "GPT-5.4 — flagship serbaguna.", "gpt-5.4-mi
 // melayani saat uji 1 akun 2026-10-31 (llama3.2:3b tidak dimuat: 503, tidak ada
 // server yang melayani). Nama publik = id upstream apa adanya. upstream_url
 // TIDAK ditulis di kode — diisi operator lewat env PROVIDER_SIRIUS_UPSTREAM_URL.
-const SIRIUS_MODELS = ["qwen2.5:7b", "qwen2.5:14b", "qwen3-coder:30b"];
-const SIRIUS_NOTES = { "qwen2.5:7b": "Chat terverifikasi jalan (uji 31 Okt 2026).", "qwen2.5:14b": "Chat terverifikasi jalan, tapi lambat (uji 31 Okt 2026).", "qwen3-coder:30b": "Chat terverifikasi jalan, andal untuk coding (uji 31 Okt 2026)." };
+// qwen2.5:14b DIKELUARKAN 2026-10-31 malam (perintah Hestia): upstream AI4ALL
+// sendiri menjawab 404 "No providers online serving model" untuk 14b — mati di
+// sumbernya untuk semua akun baru/lama; akun baru hanya diberi 2 model ini.
+const SIRIUS_MODELS = ["qwen2.5:7b", "qwen3-coder:30b"];
+const SIRIUS_NOTES = { "qwen2.5:7b": "Chat terverifikasi jalan (uji 31 Okt 2026).", "qwen3-coder:30b": "Chat terverifikasi jalan, andal untuk coding (uji 31 Okt 2026)." };
 // MIRA (tier Media V2): katalog gambar saja — id publik = id upstream (nama model generik).
 // Harga per gambar dari katalog studio upstream (kredit); seedream-5-flash belum terpetakan -> tanpa angka.
 const MIRA_MODELS = ["z-image", "qwen-image-2-1", "nano-banana-2", "nano-banana-2-1", "nano-banana-2-lite", "nano-banana-pro", "gpt-image-2-5-flare", "gpt-image-2-5-sunburst", "gpt-image-2", "grok-imagine-image-2", "seedream-5-lite", "seedream-5-pro", "seedream-5-flash"];
@@ -296,9 +299,9 @@ function seed() {
   // Sirius: provider utama tier Gratis MENGGANTIKAN Lyra (2026-10-31, perintah
   // Hestia). Tanpa tier baru; Vela (sort 3) tetap cadangan diam di belakangnya.
   db.prepare("INSERT INTO providers (tier_id,brand_name,tagline,model_count,model_list_json,model_notes_json,credit_note,default_credit,sort_order) SELECT (SELECT id FROM tiers WHERE slug='gratis'),?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM providers WHERE brand_name='Sirius')").run(
-    "Sirius", "Always-free BETA", 3, JSON.stringify(SIRIUS_MODELS), JSON.stringify(SIRIUS_NOTES), "Gratis selamanya.", null, 1);
+    "Sirius", "Always-free BETA", 2, JSON.stringify(SIRIUS_MODELS), JSON.stringify(SIRIUS_NOTES), "Gratis selamanya.", null, 1);
   db.prepare("UPDATE providers SET tier_id=(SELECT id FROM tiers WHERE slug='gratis'), tagline=?, model_count=?, model_list_json=?, model_notes_json=?, credit_note=?, default_credit=?, sort_order=? WHERE brand_name='Sirius'").run(
-    "Always-free BETA", 3, JSON.stringify(SIRIUS_MODELS), JSON.stringify(SIRIUS_NOTES), "Gratis selamanya.", null, 1);
+    "Always-free BETA", 2, JSON.stringify(SIRIUS_MODELS), JSON.stringify(SIRIUS_NOTES), "Gratis selamanya.", null, 1);
   // Migrasi 2026-10-31 (perintah Hestia): Lyra DIHAPUS TOTAL dari HestiaFlow —
   // akun upstream-nya sudah tidak karuan (pool mati massal). Baris Lyra + key/akun
   // panen/worker/log/job miliknya dibuang permanen dari DB (meniru penghapusan Luna).
