@@ -102,6 +102,14 @@ const SPESIAL_NOTES = { "gpt-5.6-luna": "GPT-5.6 Luna — flagship ringan.", "ge
 // di kode — diisi operator lewat env PROVIDER_AQUILA_UPSTREAM_URL (sync env sesudah seed()).
 const AQUILA_MODELS = ["gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "claude-sonnet-4-6", "claude-opus-4-6", "gemini-2.5-flash", "gemini-3.8-flash", "qwen3.5-plus", "qwen3.6-plus"];
 const AQUILA_NOTES = { "gpt-5.4": "GPT-5.4 — flagship serbaguna.", "gpt-5.4-mini": "GPT-5.4 Mini — cepat dan hemat.", "gpt-5.4-nano": "GPT-5.4 Nano — paling ringan.", "claude-sonnet-4-6": "Claude Sonnet 4.6 — coding dan analisis.", "claude-opus-4-6": "Claude Opus 4.6 — reasoning terkuat.", "gemini-2.5-flash": "Gemini 2.5 Flash — cepat dan serbaguna.", "gemini-3.8-flash": "Gemini 3.8 Flash — versi lebih baru.", "qwen3.5-plus": "Qwen 3.5 Plus — seimbang untuk semua tugas.", "qwen3.6-plus": "Qwen 3.6 Plus — versi lebih baru." };
+// SIRIUS (tier Gratis, 2026-10-31, perintah Hestia: menggantikan Lyra/Gonka yang
+// sudah tidak karuan): akun upstream TANPA saldo/credit — gratis selamanya
+// (always-free), jadi default_credit NULL. Katalog = 3 model yang TERBUKTI
+// melayani saat uji 1 akun 2026-10-31 (llama3.2:3b tidak dimuat: 503, tidak ada
+// server yang melayani). Nama publik = id upstream apa adanya. upstream_url
+// TIDAK ditulis di kode — diisi operator lewat env PROVIDER_SIRIUS_UPSTREAM_URL.
+const SIRIUS_MODELS = ["qwen2.5:7b", "qwen2.5:14b", "qwen3-coder:30b"];
+const SIRIUS_NOTES = { "qwen2.5:7b": "Chat terverifikasi jalan (uji 31 Okt 2026).", "qwen2.5:14b": "Chat terverifikasi jalan, tapi lambat (uji 31 Okt 2026).", "qwen3-coder:30b": "Chat terverifikasi jalan, andal untuk coding (uji 31 Okt 2026)." };
 // MIRA (tier Media V2): katalog gambar saja — id publik = id upstream (nama model generik).
 // Harga per gambar dari katalog studio upstream (kredit); seedream-5-flash belum terpetakan -> tanpa angka.
 const MIRA_MODELS = ["z-image", "qwen-image-2-1", "nano-banana-2", "nano-banana-2-1", "nano-banana-2-lite", "nano-banana-pro", "gpt-image-2-5-flare", "gpt-image-2-5-sunburst", "gpt-image-2", "grok-imagine-image-2", "seedream-5-lite", "seedream-5-pro", "seedream-5-flash"];
@@ -231,10 +239,8 @@ function seed() {
   // Mesin di balik layar tidak ditampilkan publik (anti-bocor); upstream_url TIDAK ditulis di kode —
   // diisi operator lewat env PROVIDER_LYRA_UPSTREAM_URL (sync env sesudah seed()).
   // Katalog 3 model nama publik pendek (perintah Hestia); peta ke id upstream di LYRA_MODEL_MAP.
-  db.prepare("INSERT INTO providers (tier_id,brand_name,tagline,model_count,model_list_json,model_notes_json,credit_note,default_credit,sort_order) SELECT (SELECT id FROM tiers WHERE slug='gratis'),?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM providers WHERE brand_name='Lyra')").run(
-    "Lyra", "Gratis Selamanya", 3, JSON.stringify(LYRA_MODELS), JSON.stringify(LYRA_NOTES), "Gratis Selamanya", 20000000, 2);
-  db.prepare("UPDATE providers SET tier_id=(SELECT id FROM tiers WHERE slug='gratis'), tagline=?, model_count=?, model_list_json=?, model_notes_json=?, credit_note=?, default_credit=? WHERE brand_name='Lyra'").run(
-    "Gratis Selamanya", 3, JSON.stringify(LYRA_MODELS), JSON.stringify(LYRA_NOTES), "Gratis Selamanya", 20000000);
+  // Lyra (Gonka): seed insert/update DICABUT 2026-10-31 — provider diganti Sirius
+  // (blok hapus total Lyra ada di bawah, sesudah seed Aquila).
   // Vela: cadangan diam tier Gratis (perintah Hestia 2026-10-30) — seed meniru Lyra persis,
   // sort 3 (di bawah Lyra), default_credit = jatah token mingguan akun gratis upstream.
   db.prepare("INSERT INTO providers (tier_id,brand_name,tagline,model_count,model_list_json,model_notes_json,credit_note,default_credit,sort_order) SELECT (SELECT id FROM tiers WHERE slug='gratis'),?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM providers WHERE brand_name='Vela')").run(
@@ -287,6 +293,26 @@ function seed() {
     "Aquila", "1 akun 300 credit.", 9, JSON.stringify(AQUILA_MODELS), JSON.stringify(AQUILA_NOTES), "1 request 1 credit.", 300, 2);
   db.prepare("UPDATE providers SET tier_id=(SELECT id FROM tiers WHERE slug='spesial'), tagline=?, model_count=?, model_list_json=?, model_notes_json=?, credit_note=?, default_credit=?, sort_order=? WHERE brand_name='Aquila'").run(
     "1 akun 300 credit.", 9, JSON.stringify(AQUILA_MODELS), JSON.stringify(AQUILA_NOTES), "1 request 1 credit.", 300, 2);
+  // Sirius: provider utama tier Gratis MENGGANTIKAN Lyra (2026-10-31, perintah
+  // Hestia). Tanpa tier baru; Vela (sort 3) tetap cadangan diam di belakangnya.
+  db.prepare("INSERT INTO providers (tier_id,brand_name,tagline,model_count,model_list_json,model_notes_json,credit_note,default_credit,sort_order) SELECT (SELECT id FROM tiers WHERE slug='gratis'),?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM providers WHERE brand_name='Sirius')").run(
+    "Sirius", "Always-free BETA", 3, JSON.stringify(SIRIUS_MODELS), JSON.stringify(SIRIUS_NOTES), "Gratis selamanya.", null, 1);
+  db.prepare("UPDATE providers SET tier_id=(SELECT id FROM tiers WHERE slug='gratis'), tagline=?, model_count=?, model_list_json=?, model_notes_json=?, credit_note=?, default_credit=?, sort_order=? WHERE brand_name='Sirius'").run(
+    "Always-free BETA", 3, JSON.stringify(SIRIUS_MODELS), JSON.stringify(SIRIUS_NOTES), "Gratis selamanya.", null, 1);
+  // Migrasi 2026-10-31 (perintah Hestia): Lyra DIHAPUS TOTAL dari HestiaFlow —
+  // akun upstream-nya sudah tidak karuan (pool mati massal). Baris Lyra + key/akun
+  // panen/worker/log/job miliknya dibuang permanen dari DB (meniru penghapusan Luna).
+  try {
+    const lyraRow = db.prepare("SELECT id FROM providers WHERE brand_name='Lyra'").get();
+    if (lyraRow) {
+      db.prepare("DELETE FROM harvested_accounts WHERE provider_id=?").run(lyraRow.id);
+      db.prepare("DELETE FROM api_keys WHERE provider_id=?").run(lyraRow.id);
+      db.prepare("DELETE FROM workers WHERE provider_id=?").run(lyraRow.id);
+      db.prepare("DELETE FROM harvest_logs WHERE provider_id=?").run(lyraRow.id);
+      try { db.prepare("DELETE FROM harvest_jobs WHERE provider_id=?").run(lyraRow.id); } catch {}
+      db.prepare("DELETE FROM providers WHERE id=?").run(lyraRow.id);
+    }
+  } catch {}
   const tierCount = db.prepare("SELECT COUNT(*) c FROM tiers").get().c;
   if (tierCount > 0) return;
   const insTier = db.prepare("INSERT INTO tiers (slug,name,audience_label,badge,max_models,sort_order) VALUES (?,?,?,?,?,?)");
@@ -427,6 +453,7 @@ async function enqueueAdminHarvestJobs(provider, count) {
   if (provider.brand_name === "Vela") { models = VELA_MODELS.slice(); source = "configured"; }
   if (provider.brand_name === "Spesial") { models = SPESIAL_MODELS.slice(); source = "configured"; }
   if (provider.brand_name === "Aquila") { models = AQUILA_MODELS.slice(); source = "configured"; }
+  if (provider.brand_name === "Sirius") { models = SIRIUS_MODELS.slice(); source = "configured"; }
   if (tier && tier.max_models != null && models.length > tier.max_models) models = models.slice(0, tier.max_models);
   const jobIds = [];
   const keys = [];
@@ -663,13 +690,17 @@ async function tryAutoRegisterLuna(provider) {
   const webBase = apiBase.replace(/\/v1$/, "");
   const randIp = () => Array.from({ length: 4 }, () => 1 + Math.floor(Math.random() * 254)).join(".");
   const UA = "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36";
-  // 1) Temp email via 1secmail (real domain).
+  // 1) Temp email: tempmail.ing lebih dulu (terbukti diterima upstream
+  // 2026-10-31), cadangan jalur lama 1secmail.
   let tempEmail = null;
-  try {
-    const r = await fetch("https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1", { signal: AbortSignal.timeout(10000) });
-    const arr = await r.json().catch(() => null);
-    if (Array.isArray(arr) && arr[0]) tempEmail = arr[0];
-  } catch {}
+  try { tempEmail = await tempmailGenerate(); } catch {}
+  if (!tempEmail) {
+    try {
+      const r = await fetch("https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1", { signal: AbortSignal.timeout(10000) });
+      const arr = await r.json().catch(() => null);
+      if (Array.isArray(arr) && arr[0]) tempEmail = arr[0];
+    } catch {}
+  }
   if (!tempEmail) tempEmail = `hf_${randStr(10)}@1secmail.com`;
   // 2) Strong password (upper + lower + digit + symbol, 12 chars).
   const up = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", lo = "abcdefghijklmnopqrstuvwxyz", dg = "0123456789", sy = "!@#$%";
@@ -2075,7 +2106,7 @@ async function tryAutoRegister(provider, tempEmail, tempPassword) {
   if (!base) return null;
   // Brand-specific flows (proven by operator's own scripts).
   // Luna = AI4ALL (2026-10-19, bestllmapi tidak kasih trial gratis lagi).
-  if ((provider.brand_name || "").toLowerCase() === "luna") {
+  if (["luna", "sirius"].includes((provider.brand_name || "").toLowerCase())) {
     const luna = await tryAutoRegisterLuna(provider);
     if (luna) return luna;
     return null;
@@ -2286,6 +2317,7 @@ async function doHarvest({ userId, providerId, count }) {
   // Spesial: sama — selalu katalog 9 model yang terbukti kebuka di trial upstream.
   if (provider && provider.brand_name === "Spesial") { models = SPESIAL_MODELS.slice(); source = "configured"; }
   if (provider && provider.brand_name === "Aquila") { models = AQUILA_MODELS.slice(); source = "configured"; }
+  if (provider && provider.brand_name === "Sirius") { models = SIRIUS_MODELS.slice(); source = "configured"; }
   // Gratis tier: enforce max 2 models.
   if (tier && tier.max_models != null && models.length > tier.max_models) models = models.slice(0, tier.max_models);
   const logs = []; const keys = [];
