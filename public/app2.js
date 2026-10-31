@@ -486,6 +486,7 @@ function renderAdminSections() {
       ${keyFilterUser ? `<div class="banner-filter">Filter: kunci milik <b>${esc(keyFilterUser)}</b> <button class="btn btn-ghost btn-sm" onclick="clearKeyFilter()">Tampilkan semua</button></div>` : ""}
       <div class="grid">${keys.map((k) => `<div class="card"><span class="chip">${esc(k.providerBrand || "")}</span><span class="chip">${esc(k.tierSlug || "")}</span>
         <p class="kv">Pemilik: <b>${esc(k.ownerEmail || "(pool)")}</b> · Prefix: ${esc(k.keyPrefix)} · Credit: ${k.credit != null ? esc(k.credit) : "Tidak dinyatakan"}</p>
+        ${k.keyValue ? `<p class="kv" style="word-break:break-all">Key: <code>${esc(k.keyValue)}</code> <button class="btn btn-ghost btn-sm" onclick="copyText('${esc(k.keyValue)}', this)">Salin</button></p>` : ""}
         <div>${(k.models || []).slice(0, 8).map((m) => `<span class="chip model">${esc(m)}</span>`).join("")}${(k.models || []).length > 8 ? `<span class="chip">+${k.models.length - 8} lagi</span>` : ""}</div>
         <div style="margin-top:8px"><button class="btn btn-danger btn-sm" onclick="deleteAdminKey(${k.id},this)">Hapus Key</button></div></div>`).join("") || `<p class="muted">Belum ada kunci.</p>`}</div></div>`;
   }
@@ -584,7 +585,7 @@ async function doAdminHarvest(providerId) {
   if (box) box.innerHTML = "<div>Sedang memanen… tunggu sampai selesai (bisa 1–3 menit, jangan pindah halaman).</div>";
   try {
     const out = await api("/api/admin/harvest", { method: "POST", body: JSON.stringify({ providerId, count }) });
-    lastHarvestResults[providerId] = (out.logs || []).map((m, i) => { const k = (out.keys || [])[i]; const st = k ? (k.queued ? " (antre ke kotak pekerja)" : k.live ? " — Live" : " — Mati") : ""; return m + st; });
+    lastHarvestResults[providerId] = (out.logs || []).flatMap((m, i) => { const k = (out.keys || [])[i]; const st = k ? (k.queued ? " (antre ke kotak pekerja)" : k.live ? " — Live" : " — Mati") : ""; return (k && k.key) ? [m + st, k.key] : [m + st]; });
     await loadAdmin();
   } catch (e) { lastHarvestResults[providerId] = ["Panen gagal: " + e.message]; const nb = $("#alog-" + providerId); if (nb) nb.innerHTML = "<div>Panen gagal: " + esc(e.message) + "</div>"; alert("Panen gagal: " + e.message); }
 }
