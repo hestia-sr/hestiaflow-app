@@ -571,7 +571,9 @@ async function addTier() {
   loadAdmin();
 }
 function stepAdminCount(id, d) { const el = $("#acount-" + id); if (el) el.value = Math.max(1, Math.min(50, (parseInt(el.value, 10) || 1) + d)); }
+const lastHarvestResults = {};
 function renderAlog(pid) {
+  if (lastHarvestResults[pid] && lastHarvestResults[pid].length) return lastHarvestResults[pid].map((m) => `<div class="ok">${esc(m)}</div>`).join("");
   const rows = (adminCache.logs || []).filter((l) => Number(l.provider_id) === Number(pid)).slice(0, 5);
   if (!rows.length) return "Belum ada log panen.";
   return rows.map((l) => `<div>${esc(l.message || "")}</div>`).join("");
@@ -582,13 +584,9 @@ async function doAdminHarvest(providerId) {
   if (box) box.innerHTML = "<div>Sedang memanen… tunggu sampai selesai (bisa 1–3 menit, jangan pindah halaman).</div>";
   try {
     const out = await api("/api/admin/harvest", { method: "POST", body: JSON.stringify({ providerId, count }) });
+    lastHarvestResults[providerId] = (out.logs || []).map((m, i) => { const k = (out.keys || [])[i]; const st = k ? (k.queued ? " (antre ke kotak pekerja)" : k.live ? " — Live" : " — Mati") : ""; return m + st; });
     await loadAdmin();
-    const nb = $("#alog-" + providerId);
-    if (nb && out.logs) {
-      nb.innerHTML = "";
-      out.logs.forEach((m, i) => { const d = document.createElement("div"); d.className = "ok"; const k = (out.keys || [])[i]; const st = k ? (k.queued ? " (antre ke kotak pekerja)" : k.live ? " — Live" : " — Mati") : ""; d.textContent = m + st; nb.appendChild(d); });
-    }
-  } catch (e) { const nb = $("#alog-" + providerId); if (nb) nb.innerHTML = "<div>Panen gagal: " + esc(e.message) + "</div>"; alert("Panen gagal: " + e.message); }
+  } catch (e) { lastHarvestResults[providerId] = ["Panen gagal: " + e.message]; const nb = $("#alog-" + providerId); if (nb) nb.innerHTML = "<div>Panen gagal: " + esc(e.message) + "</div>"; alert("Panen gagal: " + e.message); }
 }
 async function addWorker() {
   const providerId = Number($("#wProv").value), name = $("#wName").value.trim(), credit = Number($("#wCredit").value) || 0;
