@@ -2498,6 +2498,15 @@ function recordBansosUsage(workerId, tokens) {
     db.prepare("INSERT INTO bansos_usage (day,worker_id,tokens,requests) VALUES (?,?,?,1) ON CONFLICT(day,worker_id) DO UPDATE SET tokens=tokens+?, requests=requests+1").run(bansosDay(), workerId, t, t);
   } catch {}
 }
+// Potong credit key tier Spesial (perintah Hestia 2026-10-31): satuan asli kedua
+// provider tier ini memang 1 request = 1 credit (lihat credit_note Spesial &
+// Aquila), jadi tiap chat BERHASIL (2xx) mengurangi credit key yang melayani
+// sebanyak 1, lantai 0. Credit NULL (tier tanpa credit) tidak disentuh. TANPA
+// blok baru di 0 — saat saldo akun upstream sungguhan habis, upstream sendiri
+// yang menolak (402 masuk jalur failover yang sudah ada).
+function potongCreditSpesial(apiKeyId) {
+  try { db.prepare("UPDATE api_keys SET credit=MAX(0, credit-1) WHERE id=? AND credit IS NOT NULL").run(apiKeyId); } catch {}
+}
 function getAnonId(req, res) {
   const raw = String(req.headers.cookie || "");
   const part = raw.split(";").map((s) => s.trim()).find((s) => s.indexOf("hf_anon=") === 0);
@@ -2942,6 +2951,7 @@ app.post("/v1/chat/completions", async (req, res) => {
   let upstreamCandidates = [];
   // BANSOS: key anonim memakai pool akun (workers) bergiliran, yang paling sedikit dipakai duluan.
   const isBansosKey = !!(key.anon_id && provider);
+  const isSpesialCreditKey = !!(provider && (provider.brand_name === "Spesial" || provider.brand_name === "Aquila"));
   if (isBansosKey && BANSOS_LOCKED) return res.status(403).json({ error: { message: "Bansos sedang dikunci sementara. Coba lagi nanti ya.", type: "invalid_request_error", param: null, code: "bansos_locked" } });
   if (isBansosKey) {
     const poolNow = bansosPool();
@@ -3027,6 +3037,7 @@ app.post("/v1/chat/completions", async (req, res) => {
           const mB = [...tailB.matchAll(/"total_tokens"\s*:\s*(\d+)/g)];
           if (mB.length) recordBansosUsage(cand.workerId, Number(mB[mB.length - 1][1]));
         }
+        if (isSpesialCreditKey && r.status >= 200 && r.status < 300) potongCreditSpesial(key.id);
         return res.end();
       }
       clearTimeout(t);
@@ -3037,6 +3048,7 @@ app.post("/v1/chat/completions", async (req, res) => {
         continue;
       }
       if (isBansosKey && cand.workerId && r.status >= 200 && r.status < 300 && data && data.usage && data.usage.total_tokens) recordBansosUsage(cand.workerId, data.usage.total_tokens);
+      if (isSpesialCreditKey && r.status >= 200 && r.status < 300) potongCreditSpesial(key.id);
       return res.status(r.status).json(data);
     } catch (e) {
       lastError = e && e.message;
