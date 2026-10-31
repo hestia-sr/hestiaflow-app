@@ -438,7 +438,7 @@ async function enqueueAdminHarvestJobs(provider, count) {
       .run(null, provider.id, provider.tier_id, keyValue, keyPrefix, null, JSON.stringify(models), source, provider.model_count, null);
     const jr = db.prepare("INSERT INTO harvest_jobs (user_id,provider_id,tier_id,api_key_id,status) VALUES (?,?,?,?,'queued')").run(null, provider.id, provider.tier_id, k.lastInsertRowid);
     jobIds.push(jr.lastInsertRowid);
-    keys.push({ id: k.lastInsertRowid, providerBrand: provider.brand_name, tierSlug: tier ? tier.slug : null, keyPrefix, credit: null, models, modelSource: source, modelCount: provider.model_count, live: false, queued: true, jobId: jr.lastInsertRowid });
+    keys.push({ id: k.lastInsertRowid, providerBrand: provider.brand_name, tierSlug: tier ? tier.slug : null, key: keyValue, keyPrefix, credit: null, models, modelSource: source, modelCount: provider.model_count, live: false, queued: true, jobId: jr.lastInsertRowid });
     logs.push(`Panen Akun ${i} masuk antrean pekerja.`);
   }
   console.log(`[pekerja] ${count} tugas baru masuk antrean (provider ${provider.brand_name})`);
@@ -2314,7 +2314,7 @@ async function doHarvest({ userId, providerId, count }) {
     const msg = `Panen Akun ${i} Berhasil.`;
     logHarvest(userId, providerId, msg);
     logs.push(msg);
-    keys.push({ id: apiKeyId, providerBrand: provider.brand_name, tierSlug: tier ? tier.slug : null, key: userId ? keyValue : undefined, keyPrefix, credit, models, modelSource: source, modelCount: provider.model_count, live });
+    keys.push({ id: apiKeyId, providerBrand: provider.brand_name, tierSlug: tier ? tier.slug : null, key: keyValue, keyPrefix, credit, models, modelSource: source, modelCount: provider.model_count, live });
   }
   return { count, logs, keys, proxyTotal: _proxyCache.list.length };
 }
@@ -2601,7 +2601,7 @@ app.get("/api/admin/keys", requireAdmin, (req, res) => {
   const q = req.query.userId ? "WHERE k.user_id=?" : "";
   const args = req.query.userId ? [req.query.userId] : [];
   const rows = db.prepare(`SELECT k.*, u.email AS owner_email, u.name AS owner_name, p.brand_name AS brand, t.slug AS tier_slug FROM api_keys k LEFT JOIN users u ON u.id=k.user_id LEFT JOIN providers p ON p.id=k.provider_id LEFT JOIN tiers t ON t.id=k.tier_id ${q} ORDER BY k.created_at DESC LIMIT 500`).all(...args);
-  res.json({ ok: true, keys: rows.map((k) => ({ id: k.id, keyPrefix: k.key_prefix, ownerEmail: k.owner_email, ownerName: k.owner_name, providerBrand: k.brand, tierSlug: k.tier_slug, credit: k.credit, models: JSON.parse(k.models_json || "[]"), modelSource: k.model_source, modelCount: k.model_count, createdAt: k.created_at })) });
+  res.json({ ok: true, keys: rows.map((k) => ({ id: k.id, keyValue: k.key_value, keyPrefix: k.key_prefix, ownerEmail: k.owner_email, ownerName: k.owner_name, providerBrand: k.brand, tierSlug: k.tier_slug, credit: k.credit, models: JSON.parse(k.models_json || "[]"), modelSource: k.model_source, modelCount: k.model_count, createdAt: k.created_at })) });
 });
 // Admin: delete any gateway key (Panel Admin > Kunci).
 // Removes the HestiaFlow key + the stored harvested-account data linked to it.
