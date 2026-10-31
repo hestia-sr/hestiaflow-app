@@ -493,7 +493,11 @@ function renderAdminSections() {
     html = `<div id="sec-provider"><h3>Provider & Tier</h3>
       <div class="card"><h4>Kelola Tier</h4><div class="grid">${adminCache.tiers.map((t) => `
         <div class="card"><span class="badge ${t.slug === "gratis" ? "gratis" : t.slug === "plus" ? "plus" : t.slug === "pro" ? "pro" : "premium"}">${esc(t.badge || t.name)}</span>
-        <p class="kv">Slug: ${esc(t.slug)} · ${t.providerCount} provider${t.max_models != null ? ` · Maks ${t.max_models} model` : ""}</p></div>`).join("")}</div>
+        <p class="kv">Slug: ${esc(t.slug)} · ${t.providerCount} provider${t.max_models != null ? ` · Maks ${t.max_models} model` : ""}</p>
+        <div style="margin-top:6px"><label style="font-size:12px">Status tier: </label><select onchange="setTierState('${esc(t.slug)}', this.value)">
+        <option value="open" ${t.state === "open" ? "selected" : ""}>Buka</option>
+        <option value="harvest" ${t.state === "harvest" ? "selected" : ""}>Kunci Panen (key lama tetap jalan)</option>
+        <option value="closed" ${t.state === "closed" ? "selected" : ""}>Tutup Total (key ikut mati)</option></select></div></div>`).join("")}</div>
         <div class="row"><div><label>Nama tier baru</label><input id="newTierName" placeholder="mis. Ultra" /></div>
         <div><label>Label audiens</label><input id="newTierAud" placeholder="UNTUK PENGGUNA ULTRA" /></div>
         <div><label>Maks model (kosong = tanpa batas)</label><input id="newTierMax" type="number" min="1" placeholder="" /></div></div>
@@ -556,6 +560,7 @@ function viewUserKeys(id) {
 }
 function clearKeyFilter() { keyFilterUser = null; renderAdminSections(); }
 async function setUserTier(id, slug) { try { await api(`/api/admin/users/${id}/tier`, { method: "POST", body: JSON.stringify({ tierSlug: slug }) }); } catch (e) { alert("Gagal set paket: " + e.message); } }
+async function setTierState(slug, state) { try { await api("/api/admin/tier-state", { method: "PUT", body: JSON.stringify({ slug, state }) }); } catch (e) { alert("Gagal ubah status tier: " + e.message); loadAdmin(); } }
 function askDeleteUser(id, email) {
   if (!confirm(`Hapus akun ${email}? Semua kunci milik pengguna ini ikut terhapus dan tidak bisa dibatalkan.`)) return;
   api(`/api/admin/users/${id}`, { method: "DELETE" }).then(() => loadAdmin()).catch((e) => alert("Gagal: " + e.message));
