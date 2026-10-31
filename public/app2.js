@@ -517,7 +517,7 @@ function renderAdminSections() {
             <input id="acount-${p.id}" type="number" min="1" max="50" value="1" oninput="clampCount(this)" />
             <button type="button" onclick="stepAdminCount(${p.id},1)">+</button></div></div></div>
           <button class="btn btn-plum btn-sm" style="margin-top:10px" onclick="doAdminHarvest(${p.id})">Panen Akun</button>
-          <div class="logbox" id="alog-${p.id}" style="margin-top:10px">Belum ada log panen.</div></div></div>`).join("") || `<p class="muted">Belum ada provider di tier ini.</p>`}
+          <div class="logbox" id="alog-${p.id}" style="margin-top:10px">${renderAlog(p.id)}</div></div></div>`).join("") || `<p class="muted">Belum ada provider di tier ini.</p>`}
         </div>`; }).join("")}
       </div>`;
   }
@@ -571,14 +571,24 @@ async function addTier() {
   loadAdmin();
 }
 function stepAdminCount(id, d) { const el = $("#acount-" + id); if (el) el.value = Math.max(1, Math.min(50, (parseInt(el.value, 10) || 1) + d)); }
+function renderAlog(pid) {
+  const rows = (adminCache.logs || []).filter((l) => Number(l.provider_id) === Number(pid)).slice(0, 5);
+  if (!rows.length) return "Belum ada log panen.";
+  return rows.map((l) => `<div>${esc(l.message || "")}</div>`).join("");
+}
 async function doAdminHarvest(providerId) {
   const el = $("#acount-" + providerId); const count = Math.max(1, Math.min(50, parseInt(el.value, 10) || 1));
   const box = $("#alog-" + providerId);
+  if (box) box.innerHTML = "<div>Sedang memanen… tunggu sampai selesai (bisa 1–3 menit, jangan pindah halaman).</div>";
   try {
     const out = await api("/api/admin/harvest", { method: "POST", body: JSON.stringify({ providerId, count }) });
-    out.logs.forEach((m) => { const d = document.createElement("div"); d.className = "ok"; d.textContent = m; box.prepend(d); });
-    loadAdmin();
-  } catch (e) { alert("Panen gagal: " + e.message); }
+    await loadAdmin();
+    const nb = $("#alog-" + providerId);
+    if (nb && out.logs) {
+      nb.innerHTML = "";
+      out.logs.forEach((m, i) => { const d = document.createElement("div"); d.className = "ok"; const k = (out.keys || [])[i]; const st = k ? (k.queued ? " (antre ke kotak pekerja)" : k.live ? " — Live" : " — Mati") : ""; d.textContent = m + st; nb.appendChild(d); });
+    }
+  } catch (e) { const nb = $("#alog-" + providerId); if (nb) nb.innerHTML = "<div>Panen gagal: " + esc(e.message) + "</div>"; alert("Panen gagal: " + e.message); }
 }
 async function addWorker() {
   const providerId = Number($("#wProv").value), name = $("#wName").value.trim(), credit = Number($("#wCredit").value) || 0;
